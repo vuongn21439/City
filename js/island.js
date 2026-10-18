@@ -9,6 +9,8 @@
  *      Island.fishDir(x,z)          góc quay mặt (rad, 0 = +z) về phía mặt nước gần nhất
  *      Island.groundY(x,z)          độ cao mặt đứng (cát 0.04, ván bến 0.3)
  *      Island.WATER_Y               mặt nước (để phao câu nằm đúng mặt nước)
+ *      Island.isWater(x,z)          true nếu là mặt nước thật (không phải đất / bến / thuyền)
+ *      Island.castTarget(x,z,a,d)   điểm phao rơi xuống nước, cách d theo hướng a (tự đẩy ra xa nếu chưa tới nước)
  *
  * env (three-scene.js đưa vào): group, aniso, Batch, GlowBatch, blobs, makeTextPlane, addLamp, addGlow, addPool, reg (đăng ký hiệu ứng ban đêm), waterMats, anim
  */
@@ -72,11 +74,24 @@ const Island = (() => {
     if(inRect(x,z, PIER.cx-h.hw-0.3, PIER.cx+h.hw+0.3, h.z0-0.3, h.z1, 0)) base = PI;                         // đầu chữ T: nhìn ra biển phía bắc
     else if(inRect(x,z, PIER.cx-PIER.hw-0.3, PIER.cx+PIER.hw+0.3, t.z0, t.z1, 0)) base = x < PIER.cx ? -PI/2 : PI/2;   // thân bến: nhìn sang bên gần hơn
     else base = Math.atan2(x/(RX*RX), z/(RZ*RZ));                                                              // bờ đảo: nhìn theo pháp tuyến elip
-    // phao rơi cách 5.2 đơn vị phía trước: nếu rơi trúng đất / ván bến thì xoay dần sang hướng khác cho tới khi rơi xuống nước
-    const ok = a => { const tx = x + Math.sin(a)*5.2, tz = z + Math.cos(a)*5.2; return !inIsland(tx,tz,-0.4) && !onPier(tx,tz,-0.5); };
+    // phao rơi cách 5.2 đơn vị phía trước: nếu rơi trúng đất / ván bến / thuyền thì xoay dần sang hướng khác cho tới khi rơi xuống nước
+    const ok = a => isWater(x + Math.sin(a)*5.2, z + Math.cos(a)*5.2);
     if(ok(base)) return base;
     for(let k=1;k<=8;k++) for(const sg of [1,-1]){ const a = base + sg*k*0.4; if(ok(a)) return a; }
     return base;
+  }
+  // mặt nước thật sự (phao chạm xuống được): ngoài đảo, ngoài ván bến, ngoài thuyền
+  function isWater(x,z){
+    if(inIsland(x,z,-0.4) || onPier(x,z,-0.5)) return false;
+    const dx = x-BOAT.x, dz = z-BOAT.z, c = Math.cos(BOAT.ry), s = Math.sin(BOAT.ry);
+    return !(Math.abs(dx*c - dz*s) < 1.3 && Math.abs(dx*s + dz*c) < 2.5);
+  }
+  // điểm phao rơi: cách người đứng 'dist' theo hướng 'face', đẩy ra xa dần cho tới khi là nước (kèm khoảng đệm 0.8)
+  function castTarget(x,z,face,dist){
+    const sx = Math.sin(face), cz = Math.cos(face); let d = dist;
+    for(let k=0;k<24;k++){ if(isWater(x+sx*d, z+cz*d) && isWater(x+sx*(d+0.8), z+cz*(d+0.8))) break; d += 0.5; }
+    if(!isWater(x+sx*d, z+cz*d)) d = dist;
+    return { x:x+sx*d, z:z+cz*d };
   }
   const groundY = (x,z) => onPier(x,z,-0.2) ? PIER.y : 0.04;
 
@@ -318,5 +333,5 @@ const Island = (() => {
     LANT.forEach(l => env.addLamp(l[0], l[1], 0.5, TOP));
   }
 
-  return { build, collides, atDock, fishDir, groundY, R, WATER_Y, PIER, HUT, spawn:{ x:2.6, z:-5 } };
+  return { build, collides, atDock, fishDir, isWater, castTarget, groundY, R, WATER_Y, PIER, HUT, spawn:{ x:2.6, z:-5 } };
 })();

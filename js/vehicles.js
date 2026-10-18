@@ -44,15 +44,28 @@ const Vehicles = (() => {
     });
     box(g, 1.5, 0.16, 0.5, 0, 0.82, -0.85, DARK);         // ghế băng sau
     box(g, 1.5, 0.55, 0.12, 0, 1.1, -1.12, DARK);
+    box(g, 1.7, 0.14, 0.34, 0, 1.02, 0.62, color);       // bảng táp-lô
+    const steering = new THREE.Group();                   // vô-lăng ở ghế lái bên trái
+    steering.position.set(-0.42, 1.20, 0.83);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.23,0.028,8,20), M(DARK)); steering.add(rim);
+    const hub = new THREE.Mesh(new THREE.SphereGeometry(0.065,10,8), M(0x68717a)); steering.add(hub);
+    const spokeA = new THREE.Mesh(new THREE.BoxGeometry(0.34,0.028,0.025), M(DARK)); spokeA.position.y = -0.02; steering.add(spokeA);
+    const spokeB = new THREE.Mesh(new THREE.BoxGeometry(0.028,0.19,0.025), M(DARK)); spokeB.position.y = -0.10; steering.add(spokeB);
+    g.add(steering);
+    const shaftGeo = new THREE.CylinderGeometry(0.045,0.06,0.43,10); shaftGeo.rotateX(Math.PI/2);
+    const shaft = new THREE.Mesh(shaftGeo,M(DARK)); shaft.position.set(-0.42,1.11,0.61); g.add(shaft);
     const ws = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.5, 0.06), GLASS());   // kính chắn gió
     ws.position.set(0, 1.12, 0.68); ws.rotation.x = -0.45; g.add(ws);
     box(g, 1.95, 0.14, 0.12, 0, 0.42, 1.74, 0xb8bcc2);    // cản trước
     [-0.62, 0.62].forEach(x => { box(g, 0.3, 0.16, 0.08, x, 0.72, 1.72, 0xfff3a0); box(g, 0.3, 0.14, 0.08, x, 0.72, -1.76, 0xc0392b); });
     const wg = wheelGeo(0.38, 0.3), wm = M(0x1a1a1a);
+    const frontWheels = [];
     [[-0.98, 1.15], [0.98, 1.15], [-0.98, -1.2], [0.98, -1.2]].forEach(([x, z]) => {
-      const w = new THREE.Mesh(wg, wm); w.position.set(x, 0.38, z); w.castShadow = true; g.add(w); wheels.push(w);
+      const pivot = new THREE.Group(); pivot.position.set(x,0.38,z);
+      const w = new THREE.Mesh(wg, wm); w.castShadow = true; pivot.add(w); g.add(pivot); wheels.push(w);
+      if(z > 0) frontWheels.push(pivot);
     });
-    g.userData = { seat:{ x:0.42, y:0.9, z:0.25 }, wheels, prop:null, maxSpeed:11 };
+    g.userData = { seat:{ x:-0.42, y:0.9, z:0.25 }, wheels, frontWheels, steering, prop:null, maxSpeed:11 };
     return g;
   }
 

@@ -2,18 +2,13 @@
  * Player entity: dữ liệu người chơi + danh sách hành động (emotes). Di chuyển/animation nằm ở game.js + three-scene.js.
  */
 const Player = (() => {
+  // icon: chuỗi dùng chung, hoặc { male, female } để hiện icon riêng theo giới tính nhân vật
   const EMOTES = [
     { id:'wave', icon:'👋', name:'Vẫy tay', duration:2.5 },
     { id:'cry', icon:'😢', name:'Buồn', duration:3 },
     { id:'lotus', icon:'🧘', name:'Ngồi xếp bằng', duration:999 }, // toggle · ngồi xếp bằng dưới đất (ngồi ghế là action 'sit' riêng)
-    { id:'jump', icon:'⬆️', name:'Nhảy lên', duration:0.8 },
-    { id:'dance1', icon:'💃', name:'Nhảy 1', duration:4 },
-    { id:'dance2', icon:'🕺', name:'Nhảy 2', duration:4 },
-    { id:'dance3', icon:'🐔', name:'Nhảy 3', duration:4 },
-    { id:'dance4', icon:'❤️', name:'Nhảy 4', duration:4 },
-    { id:'dance5', icon:'🙏', name:'Nhảy 5', duration:4 },
-    { id:'dance6', icon:'🎵', name:'Nhảy 6', duration:4 },
-    { id:'dance7', icon:'🎤', name:'Nhảy 7', duration:4 },
+    { id:'jump', icon:{ male:'🙋‍♂️', female:'🙋‍♀️' }, name:'Nhảy lên', duration:0.8 },
+    { id:'dance', icon:{ male:'🕺', female:'💃' }, name:'Nhảy', duration:4 },
     { id:'holla', icon:'✊', name:'Ăn mừng', duration:2 },
   ];
 
@@ -32,7 +27,7 @@ const Player = (() => {
       speed: GCITY_CONFIG.GAME.moveSpeed,
       chatBubble: null, chatT: 0,
       coins: GCITY_CONFIG.GAME.startCoins,
-      inventory: { worm:10, shrimp:0, lure:0, fish:0, rod:1 },
+      inventory: { worm:10, shrimp:0, lure:0, fish:0, fishValue:0, fishDex:{}, rod:1, equippedRod:0 },
       zone: 'plaza'
     };
   }
@@ -48,7 +43,9 @@ const Player = (() => {
     p.chatBubble = text; p.chatT = 5;
   }
 
+  const emoteIcon = (e, gender) => (e.icon && typeof e.icon === 'object') ? (e.icon[gender] || e.icon.male) : e.icon;
+
   const isSeated = a => a === 'sit' || a === 'lotus';   // sit = ngồi ghế · lotus = ngồi xếp bằng
 
-  return { create, doAction, say, EMOTES, isSeated };
+  return { create, doAction, say, EMOTES, emoteIcon, isSeated };
 })();

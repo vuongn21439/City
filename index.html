@@ -99,33 +99,21 @@
   <!-- Fishing panel -->
   <div id="fishPanel" class="panel fish-panel hidden">
     <div class="panel-header">
-      <span>🎣 Đảo câu cá</span>
+      <span class="fish-panel-heading"><span class="fish-panel-icon">🎣</span><span><b>Bến câu cá</b><small>Thả câu · mua mồi · khám phá cá</small></span></span>
       <button class="panel-close" data-close="fishPanel">✕</button>
     </div>
-    <div class="fish-stats">
-      <div>Cần câu: <b id="fishRod">Cần cơ bản</b></div>
-      <div>Mồi: <b id="fishBait">Giun (10)</b></div>
-      <div>Cá đã bắt: <b id="fishCount">0</b></div>
+    <div id="fishTabs" class="fish-tabs" role="tablist" aria-label="Dịch vụ bến câu cá">
+      <button class="fish-tab active" type="button" data-fish-tab="fish" role="tab">🎣 Câu cá</button>
+      <button class="fish-tab" type="button" data-fish-tab="shop" role="tab">🧺 Cửa hàng</button>
+      <button class="fish-tab" type="button" data-fish-tab="codex" role="tab">📖 Sổ cá</button>
     </div>
-    <div class="fish-area">
-      <div class="fish-water">
-        <div id="fishFloat" class="fish-float">🎣</div>
-      </div>
-      <button id="fishCastBtn" class="btn-primary btn-wide">Quăng cần</button>
-      <button id="fishSellBtn" class="btn-secondary btn-wide">Bán tất cả cá</button>
-    </div>
-    <div class="fish-shop">
-      <div class="shop-title">Mua mồi</div>
-      <button class="shop-item" data-bait="worm" data-price="5">🪱 Giun · 5 xu</button>
-      <button class="shop-item" data-bait="shrimp" data-price="15">🦐 Tép · 15 xu</button>
-      <button class="shop-item" data-bait="lure" data-price="40">✨ Mồi giả · 40 xu</button>
-    </div>
+    <div id="fishView" class="fish-view"></div>
   </div>
 
   <!-- Shop panel -->
   <div id="shopPanel" class="panel shop-panel hidden">
     <div class="panel-header">
-      <span>🏪 Dịch vụ thành phố</span>
+      <span id="shopTitle">🏪 Dịch vụ thành phố</span>
       <button class="panel-close" data-close="shopPanel">✕</button>
     </div>
     <div id="shopContent" class="shop-content"></div>
@@ -197,6 +185,7 @@
 <script defer src="js/player.js"></script>
 <script defer src="js/fishing.js"></script>
 <script defer src="js/ui.js"></script>
+<script defer src="js/lotto.js"></script>
 <script defer src="js/character.js"></script>
 <script defer src="js/animals.js"></script>
 <script defer src="js/fountain.js"></script>

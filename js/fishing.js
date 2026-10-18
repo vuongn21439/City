@@ -1,86 +1,108 @@
-/* ===== GCITY Fishing Mini-Game =====
- * Cơ chế: quăng cần → chờ cá cắn (random 2-8s) → click kéo đúng lúc → bắt cá.
- * Loại cá giá trị khác nhau, phụ thuộc vào mồi.
- */
+/* ===== GCITY Fishing Mini-Game ===== */
 const Fishing = (() => {
-  const FISH_TYPES = [
-    { id:'carp', name:'Cá chép', icon:'🐟', value:10, weight:[60,25,5] },
-    { id:'tilapia', name:'Cá rô phi', icon:'🐠', value:25, weight:[30,50,20] },
-    { id:'bass', name:'Cá quả', icon:'🐡', value:60, weight:[8,20,40] },
-    { id:'golden', name:'Cá vàng huyền thoại', icon:'✨', value:300, weight:[2,5,35] },
+  const BAITS = [
+    { id:'worm', name:'Giun', icon:'🪱', price:5, quantity:5, attracts:'Cá chép, cá quả', note:'Hợp với cá ăn mồi tự nhiên.' },
+    { id:'shrimp', name:'Tép', icon:'🦐', price:15, quantity:5, attracts:'Cá rô phi, cá chép', note:'Thu hút nhóm cá nhỏ ven bờ.' },
+    { id:'lure', name:'Mồi giả', icon:'✨', price:40, quantity:5, attracts:'Cá quả, cá vàng', note:'Dẫn dụ cá săn mồi và cá hiếm.' },
   ];
-  // weight theo mồi: [worm, shrimp, lure] - xác suất tương đối
+  // Trọng số theo mồi: [giun, tép, mồi giả]. Mỗi cột cộng thành 100.
+  const FISH_TYPES = [
+    { id:'carp', name:'Cá chép', icon:'🐟', rarity:'Phổ biến', value:12, preferredBait:'worm', description:'Cá nước ngọt hiền, thường tìm thấy gần bờ.', weight:[50,20,5] },
+    { id:'tilapia', name:'Cá rô phi', icon:'🐠', rarity:'Phổ biến', value:22, preferredBait:'shrimp', description:'Bơi thành đàn và rất dễ bị tép thu hút.', weight:[32,48,13] },
+    { id:'bass', name:'Cá quả', icon:'🐡', rarity:'Hiếm', value:55, preferredBait:'lure', description:'Cá săn mồi khỏe, thích mồi chuyển động.', weight:[15,26,42] },
+    { id:'golden', name:'Cá vàng huyền thoại', icon:'✨', rarity:'Huyền thoại', value:220, preferredBait:'lure', description:'Cực hiếm; mồi giả và cần tốt giúp tăng cơ hội gặp.', weight:[3,6,40] },
+  ];
+  const RODS = {
+    1: { name:'Cần cơ bản', price:0, rarityMultiplier:1 },
+    2: { name:'Cần cao cấp', price:100, durability:'Bền vĩnh viễn', rarityMultiplier:1.65 },
+  };
 
-  let state = 'idle'; // idle | casting | waiting | biting | reeling | caught
+  let state = 'idle'; // idle | casting | waiting | biting | caught
+  let castBait = null;
   let timer = 0;
   let currentFish = null;
-  let reelWindow = 0; // thời gian cửa sổ kéo cá
+  let reelWindow = 0;
 
-  function getFishForBait(bait){
-    const idx = {worm:0, shrimp:1, lure:2}[bait] || 0;
-    let total = 0;
-    const probs = FISH_TYPES.map(f=>{ total += f.weight[idx]; return total; });
-    const r = Math.random()*total;
-    for(let i=0;i<FISH_TYPES.length;i++){ if(r < probs[i]) return FISH_TYPES[i]; }
+  function getFishForBait(bait, rodTier){
+    const idx = ({worm:0, shrimp:1, lure:2})[bait] ?? 0;
+    const rareBoost = (RODS[rodTier] || RODS[1]).rarityMultiplier;
+    const weights = FISH_TYPES.map(f => f.weight[idx] * (f.rarity === 'Phổ biến' ? 1 : rareBoost));
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    let roll = Math.random() * total;
+    for(let i=0;i<FISH_TYPES.length;i++){
+      roll -= weights[i];
+      if(roll < 0) return FISH_TYPES[i];
+    }
     return FISH_TYPES[0];
   }
 
+  const pickBait = player => player.inventory.lure>0 ? 'lure' : (player.inventory.shrimp>0 ? 'shrimp' : (player.inventory.worm>0 ? 'worm' : null));
+
   function cast(player, onEvent){
     if(state !== 'idle') return false;
-    // kiểm tra mồi
-    const bait = player.inventory.lure>0 ? 'lure' : (player.inventory.shrimp>0 ? 'shrimp' : (player.inventory.worm>0 ? 'worm' : null));
-    if(!bait){ onEvent({type:'error', msg:'Bạn đã hết mồi. Hãy mua thêm mồi.'}); return false; }
-    player.inventory[bait]--;
-    state = 'casting'; timer = 1.2;
+    if(!pickBait(player)){ onEvent({type:'error', msg:'Bạn đã hết mồi. Hãy mua thêm mồi.'}); return false; }
+    state = 'casting'; timer = 4;
     onEvent({type:'casting'});
     return true;
   }
 
-  function update(dt, player, onEvent){
+  // Chỉ trừ mồi khi phao đã chạm mặt nước.
+  function landed(player, onEvent){
+    if(state !== 'casting') return false;
+    const bait = pickBait(player);
+    if(!bait){ state = 'idle'; onEvent({type:'error', msg:'Bạn đã hết mồi. Hãy mua thêm mồi.'}); return false; }
+    player.inventory[bait]--; castBait = bait;
+    state = 'waiting'; timer = 2 + Math.random()*6;
+    onEvent({type:'waiting'});
+    return true;
+  }
+
+  function update(dt, player, onEvent, rodTier){
     if(state==='casting'){
       timer -= dt;
-      if(timer<=0){ state='waiting'; timer = 2 + Math.random()*6; onEvent({type:'waiting'}); }
+      if(timer<=0) landed(player, onEvent);
     } else if(state==='waiting'){
       timer -= dt;
       if(timer<=0){
-        state='biting'; reelWindow = 1.2; // 1.2s để người chơi kéo
-        currentFish = getFishForBait(player.inventory.lure>0?'lure':(player.inventory.shrimp>0?'shrimp':'worm'));
+        state='biting'; reelWindow = 1.2;
+        currentFish = getFishForBait(castBait || 'worm', rodTier);
         onEvent({type:'biting'});
       }
     } else if(state==='biting'){
       reelWindow -= dt;
-      if(reelWindow<=0){ state='idle'; onEvent({type:'escaped'}); }
+      if(reelWindow<=0){ state='idle'; castBait=null; onEvent({type:'escaped'}); }
+    } else if(state==='caught'){
+      timer -= dt;
+      if(timer<=0){ state='idle'; currentFish=null; }
     }
   }
 
-  // người chơi click "kéo"
   function reel(player, onEvent){
     if(state==='biting'){
-      // thành công
       state='caught'; timer=1.5;
-      player.inventory.fish++; player.inventory.fishValue = (player.inventory.fishValue||0) + currentFish.value;
-      player.coins += 0; // bán mới được tiền
+      player.inventory.fish++;
+      player.inventory.fishValue = (player.inventory.fishValue||0) + currentFish.value;
+      player.inventory.fishDex = player.inventory.fishDex || {};
+      player.inventory.fishDex[currentFish.id] = (player.inventory.fishDex[currentFish.id]||0) + 1;
       onEvent({type:'caught', fish:currentFish});
-      setTimeout(()=>{ state='idle'; }, 1500);
+      castBait=null;
       return true;
     } else if(state==='waiting'){
-      // kéo sớm quá - cá chạy
-      state='idle'; onEvent({type:'too_early'});
+      state='idle'; castBait=null; onEvent({type:'too_early'});
     }
     return false;
   }
 
   function sellAll(player){
-    const n = player.inventory.fish;
-    // giá trung bình mỗi con = 30 (đơn giản hóa)
+    const count = player.inventory.fish || 0;
     const money = player.inventory.fishValue || 0;
     player.coins += money;
     player.inventory.fish = 0; player.inventory.fishValue = 0;
-    return { count:n, money };
+    return { count, money };
   }
 
   function getState(){ return { state, timer, currentFish, reelWindow }; }
-  function reset(){ state='idle'; timer=0; currentFish=null; }
+  function reset(){ state='idle'; timer=0; currentFish=null; castBait=null; reelWindow=0; }
 
-  return { cast, update, reel, sellAll, getState, reset, FISH_TYPES };
+  return { cast, landed, update, reel, sellAll, getState, reset, BAITS, RODS, FISH_TYPES };
 })();

@@ -61,7 +61,7 @@ const Scene3D = (() => {
     trees:P2([[-12,-12],[12,-12],[-12,12],[12,12],[-13,-4],[13,-4],[-13,4],[13,4],[-10.5,27],[10.5,27],[-10.5,33.5],[10.5,33.5]]),
     lamps:P2([[-15.5,-9],[-15.5,9],[15.5,-9],[15.5,9],[-6,-15.5],[6,-15.5],[-6,15.5],[6,15.5],
       [-4.6,26],[4.6,26],[-36.2,-10.8],[-36.2,16.8],[26,-4.6],[26,4.6]]),
-    flowers:P2([[-6.5,-12.5],[6.5,-12.5],[-6.5,12.5],[6.5,12.5],[-7.4,35],[7.4,35]]),
+    flowers:P2([[-6.5,-12.5],[6.5,-12.5],[-6.5,12.5],[6.5,12.5],[-7.2,34.7],[7.2,34.7]]),
     benches:[], fountain:{x:0,z:0},
     screen:{x:0, z:-37.5, w:16, h:9, y:1.4}
   });
@@ -75,6 +75,9 @@ const Scene3D = (() => {
   [[-5.4,30.5,Math.PI/2],[5.4,30.5,-Math.PI/2],                                   // 2 ghế đối diện dọc lối ra cổng tàu
    [-18.8,42,Math.PI/2],[-12.2,42,-Math.PI/2],[-15.5,44.8,Math.PI],[-15.5,39.2,0]]   // 4 ghế quanh bàn khu nghỉ chân
     .forEach(([bx,bz,ry])=>ZONES.plaza.benches.push({x:bx, z:bz, ry}));
+
+  // Bồn hoa: nửa dài/rộng của viền ngoài (đơn vị thế giới). Dùng chung cho dựng hình (makeFlowerBed) và va chạm (collides, aircraftCollision)
+  const BED = { hw:1.6, hd:0.75, wall:0.17 };
 
   function init(cont){
     container = cont;
@@ -395,6 +398,59 @@ const Scene3D = (() => {
     const mesh=B.build(); mesh.scale.setScalar(s); mesh.position.set(x,0,z); worldGroup.add(mesh);
   }
 
+  // ===== BỒN HOA: viền đá kem + đất + hoa thật (cúc · tulip · oải hương) mọc lên từ bụi lá; gộp 1 mesh / bồn (1 draw call) =====
+  // Mỗi bông là thân + lá + cánh (khối 20 mặt méo dẹt xếp vòng) + nhuỵ — không còn là quả cầu tròn. Vị trí/loại/màu cố định theo toạ độ bồn nên mỗi lần dựng lại giống hệt.
+  const _petalG = new THREE.IcosahedronGeometry(1,0), _budG = new THREE.IcosahedronGeometry(1,1), _stemG = new THREE.CylinderGeometry(0.026,0.04,1,5);
+  const BED_DAISY = [0xffffff,0xffd1e0,0xffe27a,0xff9fbf,0xffb26b], BED_TULIP = [0xe5334f,0xff5c8a,0xb45ad6,0xff8a3d,0xffd23f], BED_LAV = [0x8e6bd8,0x6f8df0,0xb48cf0,0x9b7be0];
+  const BED_GREEN = [0x2f8a4b,0x3a9a4a,0x4eb057,0x2d8040];
+  function makeFlowerBed(x,z){
+    const B=Batch(), m=new THREE.Matrix4(), q=new THREE.Quaternion(), e=new THREE.Euler(), sc=new THREE.Vector3(), p=new THREE.Vector3();
+    // put: dựng 1 khối từ hình gốc g, toạ độ cục bộ (so với tâm bồn), tỉ lệ, góc xoay (rx,ry,rz — thứ tự XYZ: rz nghiêng trước, ry xoay quanh trục đứng sau)
+    const put=(g,px,py,pz,sx,sy,sz,rx,ry,rz,hex)=>{ e.set(rx,ry,rz); q.setFromEuler(e); m.compose(p.set(px,py,pz),q,sc.set(sx,sy,sz)); B.geo(g,m,hex); };
+    const hsh=i=>{ const t=Math.sin(x*12.9898+z*78.233+i*37.719)*43758.5453; return t-Math.floor(t); };   // ngẫu nhiên cố định theo vị trí bồn
+    const {hw,hd,wall}=BED, stone=0xe6d3b0, stoneD=0xcdb98f, capC=0xf3e4c4, soilC=0x6b4a2f, SY=0.46;   // SY = mặt đất trong bồn
+
+    // --- viền: đế + 4 thành + gờ mũ + đất ---
+    B.box(hw*2+0.16,0.12,hd*2+0.16, 0,0.06,0, stoneD);
+    B.box(hw*2,0.38,wall, 0,0.31, hd-wall/2, stone); B.box(hw*2,0.38,wall, 0,0.31,-(hd-wall/2), stone);
+    B.box(wall,0.38,hd*2-wall*2,  hw-wall/2,0.31,0, stone); B.box(wall,0.38,hd*2-wall*2, -(hw-wall/2),0.31,0, stone);
+    B.box(hw*2+0.1,0.07,wall+0.1, 0,0.535, hd-wall/2, capC); B.box(hw*2+0.1,0.07,wall+0.1, 0,0.535,-(hd-wall/2), capC);
+    B.box(wall+0.1,0.07,hd*2-wall*2-0.1, hw-wall/2,0.535,0, capC); B.box(wall+0.1,0.07,hd*2-wall*2-0.1, -(hw-wall/2),0.535,0, capC);
+    B.box(hw*2-wall*2+0.02,0.34,hd*2-wall*2+0.02, 0,0.29,0, soilC);
+
+    // --- bụi lá xanh thấp (low-poly như tán cây) làm nền cho hoa ---
+    for(let i=0;i<8;i++){
+      const px=-1.0+i*0.286+(hsh(100+i)-0.5)*0.1, pz=(hsh(120+i)-0.5)*0.36, k=0.85+hsh(140+i)*0.35;
+      put(_blobs[i%3], px,SY+0.01,pz, 0.28*k,0.22*k,0.28*k, 0,hsh(160+i)*6.28,0, BED_GREEN[i%4]);
+    }
+
+    // --- hoa: lưới 3 hàng × 7 cột, so le + xê dịch nhẹ ---
+    let n=0;
+    for(let r=0;r<3;r++) for(let c=0;c<7;c++){
+      const k=n++, stagger=(r%2)*0.2;
+      const fx=Math.max(-1.26,Math.min(1.26,-1.2+c*0.4+stagger+(hsh(k*5+1)-0.5)*0.14)), fz=(r-1)*0.33+(hsh(k*5+2)-0.5)*0.12;
+      const h=0.30+hsh(k*5+3)*0.22, hy=SY+h, kind=hsh(k*5+4), ci=Math.floor(hsh(k*5+5)*5), a0=hsh(k*5+6)*6.28;
+      // thân
+      put(_stemG, fx,SY+h/2,fz, 1,h,1, 0,0,0, 0x3f9a3f);
+      if(kind<0.45){          // ── CÚC: 8 cánh dẹt toả quanh nhuỵ vàng, 2 lá nhỏ ──
+        const pc=BED_DAISY[ci];
+        for(let i=0;i<8;i++){ const a=a0+i*Math.PI/4; put(_petalG, fx+Math.cos(a)*0.15,hy+0.012,fz-Math.sin(a)*0.15, 0.105,0.018,0.042, 0,a,0.2, pc); }
+        put(_budG, fx,hy+0.02,fz, 0.085,0.05,0.085, 0,0,0, 0xf4b400);
+        for(let i=0;i<2;i++){ const a=a0+i*3.1+0.6; put(_petalG, fx+Math.cos(a)*0.11,SY+h*0.3,fz-Math.sin(a)*0.11, 0.13,0.02,0.05, 0,a,0.5, 0x4cae4c); }
+      } else if(kind<0.8){     // ── TULIP: 5 cánh dựng đứng chụm lại thành đài hoa, 2 lá dài ──
+        const pc=BED_TULIP[ci];
+        for(let i=0;i<5;i++){ const a=a0+i*Math.PI*2/5; put(_petalG, fx+Math.cos(a)*0.045,hy+0.075,fz-Math.sin(a)*0.045, 0.05,0.135,0.075, 0,a,0.22, pc); }
+        put(_petalG, fx,hy+0.19,fz, 0.035,0.045,0.035, 0,0,0, tint(pc,0.8));   // đỉnh nụ
+        for(let i=0;i<2;i++){ const a=a0+i*Math.PI+1.2; put(_petalG, fx+Math.cos(a)*0.09,SY+0.19,fz-Math.sin(a)*0.09, 0.04,0.2,0.07, 0,a,-0.35, 0x3f9a3f); }
+      } else {                 // ── OẢI HƯƠNG: chùm nụ nhỏ xếp dọc thân ──
+        const pc=BED_LAV[ci%4];
+        for(let j=0;j<6;j++){ const a=a0+j*2.4, w=0.05-j*0.004; put(_petalG, fx+Math.cos(a)*0.025,SY+h*0.62+j*0.075,fz-Math.sin(a)*0.025, w,0.055,w, 0,a,0, j%2?tint(pc,1.15):pc); }
+        for(let i=0;i<2;i++){ const a=a0+i*Math.PI+0.4; put(_petalG, fx+Math.cos(a)*0.08,SY+0.17,fz-Math.sin(a)*0.08, 0.03,0.17,0.035, 0,a,-0.3, 0x4cae4c); }
+      }
+    }
+    const mesh=B.build(); mesh.position.set(x,0,z); worldGroup.add(mesh);
+  }
+
   // ===== TOÀ NHÀ: 1 mesh/toà. Cột góc, dải sàn, cửa sổ có nẹp + bậu + chậu hoa trên cả 4 mặt, mái hiên sọc 3 bậc, biển hiệu, mái có lan can + ống khói + máy lạnh + ăng-ten =====
   function makeBuilding(b){
     const sw=Math.abs(Math.sin(b.ry||0))>.5, lw=sw?b.d:b.w, ld=sw?b.w:b.d, H=b.h, y0=0.45;
@@ -526,8 +582,7 @@ const Scene3D = (() => {
     for(let s=0;s<3;s++){ bx(5,0.15*(3-s),1.0,0,0.075*(3-s),-31.0+s*1.0,wood); }
     [-10.5,10.5].forEach(sx=>bx(1.1,2.4,1,sx,1.5,-36,L(0x1b1f27)));
     [-6,6].forEach(sx=>addPool(sx,-34.2,7.5,0xffb868,0.45,0.53));   // đèn sân khấu (chỉ ban đêm)
-    (ZONES.plaza.flowers||[]).forEach(f=>{ bx(3,0.5,1.2,f.x,0.3,f.z,L(0xe6d3b0));
-      for(let i=-1;i<=1;i++) for(let j=0;j<2;j++){ const fl=new THREE.Mesh(new THREE.SphereGeometry(0.22,6,5),L(i%2?0xf06a8d:0xff8fa8)); fl.position.set(f.x+i*0.9,0.65,f.z+(j-0.5)*0.5); worldGroup.add(fl); } });
+    (ZONES.plaza.flowers||[]).forEach(f=>makeFlowerBed(f.x, f.z));   // bồn hoa thật: viền đá + đất + cúc / tulip / oải hương (xem makeFlowerBed)
     for(let i=0;i<22;i++){ const a=i/22*Math.PI*2+Math.sin(i*3)*0.1, r=46+Math.sin(i*5)*4; const tx=Math.cos(a)*r, tz=Math.sin(a)*r; if((tx>33&&Math.abs(tz)<21)||(tx<-33&&tz>-15&&tz<19)||(tz>29&&tx>-27&&tx<28)||(tx<-30&&Math.abs(tz)<14)||(tx>30&&Math.abs(tz)<4)) continue; makeTree(tx, (Math.abs(tx)<17&&tz>-44.2&&tz<-29)?-44.6:tz, 1.5+Math.abs(Math.sin(i*7))*0.8, false); }   // cây vành đai lùi ra sau nền gạch sân khấu (không đứng vắt ngang mép gạch)
     buildParkLayout();
     buildExtras();
@@ -1083,6 +1138,10 @@ const Scene3D = (() => {
     for(const l of zone.lamps||[]){
       for(const p of parts) if(p.maxY>0.1&&p.minY<4.5&&polyHitsCircle(p.points,l.x,l.z,0.42)) return contact('lamp',4.5,l);
     }
+    for(const f of zone.flowers||[]){   // bồn hoa: viền đá + hoa cao tới ~1.2
+      const poly=rectPoly(f.x,f.z,BED.hw+0.1,BED.hd+0.1,0);
+      for(const p of parts) if(p.maxY>0.1&&p.minY<1.25&&polygonsOverlap(p.points,poly)) return contact('flowerbed',1.25,f);
+    }
     if(zone.fountain){
       for(const p of parts) if(p.maxY>0.1&&p.minY<5.1&&polyHitsCircle(p.points,zone.fountain.x,zone.fountain.z,Fountain.RADIUS)) return contact('fountain',5.1,zone.fountain);
     }
@@ -1151,6 +1210,10 @@ const Scene3D = (() => {
       if(Math.abs(x-b.x)<b.w/2+r && Math.abs(zpos-b.z)<b.d/2+r) return true;
     }
     for(const t of (z.trees||[])){ if(Math.hypot(x-t.x, zpos-t.z)<(t.r||1.2)+r) return true; }
+    // đèn đường: cột nhỏ (chân ~0.28) → vòng va chạm 0.3 + r·0.55 (cùng hệ số kiểu ghế). Luôn là vật cản, kể cả khi đang đi tới ghế
+    for(const l of (z.lamps||[])){ if(Math.hypot(x-l.x, zpos-l.z) < 0.3 + r*0.55) return true; }
+    // bồn hoa: hình chữ nhật theo đúng kích thước viền đá (BED) nới thêm theo bán kính nhân vật
+    for(const f of (z.flowers||[])){ if(Math.abs(x-f.x) < BED.hw + r*0.55 && Math.abs(zpos-f.z) < BED.hd + r*0.55) return true; }
     // ghế: cột vật cản (nếu không phải đang đi tới để ngồi thì bỏ qua)
     if(!skipFurn && z.benches){
       for(const b of z.benches){

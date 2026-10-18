@@ -397,3 +397,205 @@ body .action-btn.on{background:#3b6fa0}
   .lo-spark{ display:none; } .lo-box.hit, .lo-box.land, .mg-body.flash, .rc-ticket.win, #loSum.win, .mg-input.lo-pick.roll{ animation:none; }
   .rc-clock.run i{ animation:none; }
 }
+
+/* ===== Fishing island: compact station, bait shop, and fish codex ===== */
+.fish-panel{
+  right:14px; top:64px; width:min(410px,calc(100vw - 28px));
+  max-height:calc(100vh - 82px); max-height:calc(100dvh - 82px); overflow:hidden;
+  border-color:#315b71; background:linear-gradient(155deg,#122431 0%,#101923 62%,#17242c 100%);
+  color:#e8f4f6;
+}
+.fish-panel .panel-header{
+  min-height:64px; padding:11px 14px; border-bottom-color:#294756;
+  background:linear-gradient(110deg,#194354,#183347 58%,#242d48); color:#f8d98c;
+}
+.fish-panel-heading{display:flex; align-items:center; gap:10px; min-width:0}
+.fish-panel-icon{display:grid; place-items:center; width:40px; height:40px; border-radius:13px;
+  background:linear-gradient(145deg,#53c8c7,#267c91); box-shadow:0 5px 16px #081a2680; font-size:22px}
+.fish-panel-heading b{display:block; color:#fff3cf; font-size:16px; letter-spacing:.2px}
+.fish-panel-heading small{display:block; margin-top:2px; color:#afd0d4; font-size:10px; font-weight:500}
+.fish-panel .panel-close{flex:none; color:#c3d4d9}
+.fish-tabs{display:grid; grid-template-columns:repeat(3,1fr); gap:6px; padding:10px 12px 8px;
+  background:#12232d; border-bottom:1px solid #29404c}
+.fish-tab{min-height:38px; border:1px solid transparent; border-radius:10px; background:#1b303c;
+  color:#a6c2c7; font-size:12px; font-weight:700; transition:background .18s,border-color .18s,color .18s}
+.fish-tab.active{background:linear-gradient(135deg,#278a91,#276582); border-color:#5fc8c2;
+  color:#fff; box-shadow:0 4px 14px #0b151c80}
+.fish-view{overflow-y:auto; overscroll-behavior:contain; padding:12px; min-height:150px;
+  max-height:calc(100vh - 192px); max-height:calc(100dvh - 192px)}
+.fish-hero{display:flex; align-items:center; gap:13px; padding:14px; border:1px solid #2d5967;
+  border-radius:16px; overflow:hidden; background:linear-gradient(120deg,#1a4d5b,#153447 70%,#252d4b)}
+.fish-hero-water{position:relative; flex:none; display:grid; place-items:center; width:78px; height:74px;
+  border-radius:14px; background:linear-gradient(180deg,#43aab0,#164a6c); overflow:hidden}
+.fish-hero-water:after{content:''; position:absolute; left:-12%; right:-12%; bottom:-17px; height:45px;
+  border-radius:50%; background:#1c6882; box-shadow:0 -6px 0 #ffffff16}
+.fish-hero-float{position:relative; z-index:1; margin-top:-8px; font-size:31px; filter:drop-shadow(0 3px 2px #09222b)}
+.fish-ripple{position:absolute; z-index:1; width:29px; height:8px; border:1px solid #c9f2e580; border-radius:50%}
+.ripple-one{left:8px; bottom:20px}.ripple-two{right:5px; bottom:12px; transform:scale(.72)}
+.fish-hero-copy{display:flex; flex-direction:column; gap:4px; min-width:0}
+.fish-eyebrow{color:#83dad2; font-size:9px; font-weight:800; letter-spacing:1.1px}
+.fish-hero-copy b{font-size:14px; line-height:1.3; color:#f7fbfa}
+.fish-hero-copy small{color:#aac6cb; font-size:11px; line-height:1.4}
+.fish-stat-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin:10px 0}
+.fish-stat{display:flex; flex-direction:column; gap:3px; min-width:0; padding:10px 9px;
+  border:1px solid #294450; border-radius:12px; background:#182a34}
+.fish-stat>span{font-size:17px}.fish-stat small{font-size:10px; color:#91afb6}
+.fish-stat b{overflow:hidden; color:#effafa; font-size:12px; text-overflow:ellipsis; white-space:nowrap}
+.fish-main-actions{display:grid; grid-template-columns:1.2fr 1fr; gap:8px}
+.fish-cast-action,.fish-sell-action{min-height:46px; padding:10px; border-radius:12px; font-size:13px; font-weight:800}
+.fish-cast-action{display:flex; align-items:center; justify-content:center; gap:7px;
+  background:linear-gradient(135deg,#42c5b5,#288d9f); color:#fff; box-shadow:0 5px 14px #0b303c80}
+.fish-cast-action.is-biting{background:linear-gradient(135deg,#ff776e,#df3d4e); animation:fishBite .72s ease-in-out infinite alternate}
+.fish-cast-action:disabled{opacity:.56; box-shadow:none}
+.fish-sell-action{border:1px solid #3f6970; background:#203a42; color:#d5eeee}
+.fish-sell-action:disabled{opacity:.42}
+.fish-hint{margin:10px 2px 0; color:#9cb7bb; font-size:11px; line-height:1.5}
+.fish-hint button{padding:0; background:none; color:#7fe0d5; text-decoration:underline; font-size:inherit}
+.fish-shop-intro,.codex-intro{display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin:1px 2px 9px}
+.fish-shop-intro b,.codex-intro b{color:#f2f8f5; font-size:13px}
+.fish-shop-intro span,.codex-intro span{color:#91afb6; font-size:10px; text-align:right}
+.bait-list,.codex-list{display:flex; flex-direction:column; gap:7px}
+.bait-card{display:grid; grid-template-columns:38px minmax(0,1fr); gap:7px; align-items:center;
+  padding:10px; border:1px solid #2b424d; border-radius:13px; background:#182932}
+.bait-icon{display:grid; place-items:center; width:36px; height:36px; border-radius:11px;
+  background:#264653; font-size:21px}
+.bait-details{min-width:0}
+.bait-title{display:flex; justify-content:space-between; gap:6px; align-items:baseline}
+.bait-title b{color:#f1f8f5; font-size:12px}.bait-title span{color:#a1bdc0; font-size:10px; white-space:nowrap}
+.bait-details p{margin:3px 0; color:#a3bcc1; font-size:10px}
+.bait-details small{color:#6ecdc3; font-size:10px}
+.bait-buy{grid-column:2; justify-self:start; padding:6px 10px; border:1px solid #3d7577; border-radius:8px;
+  background:#214c55; color:#ddfffa; font-size:10px; font-weight:700}
+.bait-buy:hover,.rod-buy:hover:not(:disabled){background:#2d7277}
+.premium-rod-card{display:flex; align-items:center; gap:10px; margin-top:9px; padding:11px;
+  border:1px solid #79663a; border-radius:14px; background:linear-gradient(120deg,#3d3826,#242b31 78%)}
+.premium-rod-badge{display:grid; place-items:center; flex:none; width:38px; height:38px; border-radius:12px;
+  background:#8f7133; color:#fff3ba; font-size:22px}
+.premium-rod-copy{flex:1; min-width:0}.premium-rod-copy b{font-size:12px; color:#fff0bb}
+.premium-rod-copy p{margin:3px 0; color:#c5c2ab; font-size:10px; line-height:1.4}
+.premium-rod-copy small{color:#e5c56c; font-size:10px}
+.rod-buy{flex:none; padding:8px 10px; border-radius:9px; background:#927533; color:#fff5cc; font-size:10px; font-weight:800}
+.rod-buy:disabled{background:#4b4939; color:#c3bd9d; opacity:.85}
+.codex-card{display:grid; grid-template-columns:38px minmax(0,1fr) 34px; gap:8px; align-items:center;
+  padding:9px; border:1px solid #2a424e; border-radius:12px; background:#182932}
+.codex-icon{display:grid; place-items:center; width:36px; height:36px; border-radius:11px;
+  background:linear-gradient(145deg,#2f6974,#283855); font-size:20px}
+.codex-copy{min-width:0}.codex-title{display:flex; align-items:center; justify-content:space-between; gap:6px}
+.codex-title b{color:#f1f8f5; font-size:11px}.codex-title span{padding:2px 6px; border-radius:99px;
+  background:#284854; color:#9edbd2; font-size:9px; white-space:nowrap}
+.codex-copy p{margin:3px 0; color:#9fb8bd; font-size:10px; line-height:1.4}
+.codex-copy small{color:#d8bd73; font-size:9px}
+.codex-count{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  min-height:34px; border-radius:9px; background:#213842}
+.codex-count b{color:#d4f6e9; font-size:13px}.codex-count small{color:#91afb6; font-size:8px}
+.inv-section{grid-column:1/-1; margin:6px 0 0; color:#8fa9af; font-size:11px; font-weight:700; letter-spacing:.4px}
+.inv-rod-slot{width:100%; padding:0 2px; gap:1px; font:inherit; border:1px solid #30454c; color:#eaf7f3; cursor:pointer}
+.inv-rod-slot .rod-ic{width:30px; height:30px; display:block}
+.inv-rod-slot .inv-name{color:#d1e4df; font-size:10px; margin-top:1px; text-align:center; line-height:1.15}
+.inv-rod-slot .inv-count{position:static; color:#a8c8c5; font-size:9px; text-align:center}
+.inv-rod-slot.equipped{border:1px solid #54c4b3; background:linear-gradient(145deg,#254c4e,#1d3440); box-shadow:0 0 0 1px #54c4b344}
+.inv-rod-slot.equipped .inv-count{color:#7ee7cf; font-weight:700}
+.inv-rod-slot.locked{opacity:.55}
+.inventory-note{grid-column:1/-1; margin:1px 0 0; color:#8fa9af; font-size:11px; text-align:center}
+@keyframes fishBite{to{filter:brightness(1.2); transform:scale(1.015)}}
+@media (max-width:520px){
+  .fish-panel{right:10px; top:60px; width:calc(100vw - 20px); max-height:calc(100vh - 72px); max-height:calc(100dvh - 72px)}
+  .fish-view{max-height:calc(100vh - 175px); max-height:calc(100dvh - 175px); padding:10px}
+  .fish-stat{padding:8px 6px}.fish-stat small{font-size:9px}
+}
+@media (prefers-reduced-motion:reduce){.fish-cast-action.is-biting{animation:none}}
+
+/* ===== Số may mắn (chọn 3 chữ số) · js/lotto.js ===== */
+.shop-panel.lotto{ width:392px; max-height:calc(100vh - 24px); max-height:calc(100dvh - 24px);
+  border-color:#4a3f8c; background:linear-gradient(165deg,#221b45 0%,#17142c 55%,#121221 100%); }
+.shop-panel.lotto .panel-header{ background:linear-gradient(110deg,#2f2563,#211b45); border-bottom-color:#3d3377; color:#ffd54a; }
+.shop-panel.lotto .shop-content{ padding:12px 14px 14px; }
+
+.lt{ --rh:56px; --gold:#ffd54a; --win:#4ade80; --line:#3d3377; --card:#1d1840; --mute:#a29dcc; --ink:#e4e0ff;
+  position:relative; display:flex; flex-direction:column; gap:12px; }
+.lt-flash{ position:absolute; inset:-12px -14px; pointer-events:none; opacity:0; }
+.lt.flash .lt-flash{ animation:ltFlash .9s ease-out; }
+@keyframes ltFlash{ 0%{ opacity:0; box-shadow:inset 0 0 0 0 #ffd54a00; } 25%{ opacity:1; box-shadow:inset 0 0 70px 8px #ffd54a99; } 100%{ opacity:0; box-shadow:inset 0 0 0 0 #ffd54a00; } }
+@keyframes ltPop{ 0%{ transform:scale(.88); } 60%{ transform:scale(1.06); } 100%{ transform:scale(1); } }
+
+.lt-meta{ display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--mute); }
+.lt-meta b{ color:#fff; font-variant-numeric:tabular-nums; }
+.lt-meta #ltBal{ color:var(--gold); font-size:14px; }
+
+/* Cách chơi: 3 bước */
+.lt-steps{ list-style:none; display:grid; grid-template-columns:repeat(3,1fr); gap:6px; counter-reset:lt; }
+.lt-steps li{ text-wrap:balance; counter-increment:lt; display:flex; align-items:center; gap:6px; padding:7px 8px; font-size:12px; line-height:1.3; color:var(--ink);
+  background:var(--card); border:1px solid var(--line); border-radius:10px; }
+.lt-steps li::before{ content:counter(lt); flex:none; width:16px; height:16px; border-radius:50%; background:var(--gold); color:#2a1a00; font:800 10px/16px sans-serif; text-align:center; }
+
+.lt-sect{ display:flex; justify-content:space-between; align-items:center; min-height:24px; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--ink); }
+.lt-sect small{ display:flex; align-items:center; gap:5px; font-size:11px; font-weight:400; color:var(--mute); }
+.lt-dot{ width:9px; height:9px; border-radius:50%; background:var(--gold); }
+
+/* Bảng thưởng: chấm đầy = chữ số phải khớp */
+.lt-prizes{ display:grid; gap:5px; }
+.lt-prize{ display:grid; grid-template-columns:44px 1fr auto; align-items:center; gap:10px; padding:6px 10px; font-size:13px; color:var(--ink);
+  background:var(--card); border:1px solid var(--line); border-radius:10px; transition:opacity .25s, border-color .25s, background .25s; }
+.lt-prize b{ color:var(--gold); font-variant-numeric:tabular-nums; }
+.lt-pat{ display:flex; gap:4px; }
+.lt-pat i{ width:10px; height:10px; border-radius:50%; border:1.5px solid #6b64a6; }
+.lt-pat i.on{ background:var(--gold); border-color:var(--gold); }
+.lt-prize.win{ border-color:var(--gold); background:linear-gradient(90deg,#41350f,#2b2410); box-shadow:0 0 0 1px var(--gold), 0 0 18px #ffd54a55; animation:ltPop .5s cubic-bezier(.2,1.5,.4,1); }
+.lt-prize.dim{ opacity:.4; }
+
+/* Chọn số + cuộn kết quả dùng chung 3 cột để thẳng hàng */
+.lt-cols{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; width:min(100%,264px); margin:0 auto; }
+.lt-col{ display:flex; flex-direction:column; gap:4px; }
+.lt-step{ height:26px; border-radius:8px; background:#2a2358; color:#d6d0ff; font-size:11px; border:1px solid var(--line); touch-action:manipulation; transition:background .15s, transform .1s; }
+.lt-step:hover:not(:disabled){ background:#372e72; }
+.lt-step:active:not(:disabled){ transform:scale(.95); }
+.lt-step:disabled, .lt-dice:disabled{ opacity:.4; cursor:not-allowed; }
+.lt-d{ width:100%; height:52px; text-align:center; font-size:32px; font-weight:800; color:var(--gold); background:#0f0c22; border:2px solid #5a4ea8; border-radius:12px;
+  caret-color:transparent; cursor:pointer; font-variant-numeric:tabular-nums; transition:border-color .2s, background .2s, box-shadow .2s; }
+.lt-d.pop{ animation:ltPop .3s cubic-bezier(.2,1.5,.4,1); }
+.lt-d.hit{ color:#fff; background:#123421; border-color:var(--win); box-shadow:0 0 14px #4ade8077; }
+.lt-dice{ padding:5px 12px; border-radius:999px; background:#2a2358; color:var(--ink); font-size:12px; font-weight:600; border:1px solid var(--line); touch-action:manipulation; }
+.lt-dice:hover:not(:disabled){ background:#372e72; }
+.lt-step:focus-visible, .lt-dice:focus-visible, .lt-go:focus-visible, .lt-d:focus-visible{ outline:2px solid var(--gold); outline-offset:2px; }
+
+/* Cuộn số: dải 0-9 lặp 2 lần; quay = trượt vô hạn, dừng = trượt chậm dần tới đúng chữ số (--pos = 10 + chữ số) */
+.lt-reel{ position:relative; height:var(--rh); overflow:hidden; border-radius:12px; background:#0b091a; box-shadow:0 0 0 2px #b8921f; transition:box-shadow .25s; }
+.lt-reel::after{ content:''; position:absolute; inset:0; pointer-events:none; background:linear-gradient(180deg,rgba(0,0,0,.5),transparent 20%,transparent 80%,rgba(0,0,0,.5)); }
+.lt-strip{ will-change:transform; transform:translateY(calc(var(--rh) * var(--pos,0) * -1)); }
+.lt-strip span{ display:block; height:var(--rh); line-height:var(--rh); text-align:center; font-size:calc(var(--rh) * .7); font-weight:800; color:#fff; font-variant-numeric:tabular-nums; }
+.lt-reel.idle .lt-strip{ display:none; }
+.lt-reel.idle::before{ content:'?'; position:absolute; inset:0; display:grid; place-items:center; font-size:30px; font-weight:800; color:#4a4485; }
+.lt-reel.spin .lt-strip{ animation:ltSpin .28s linear infinite; filter:blur(1.4px); }
+.lt-reel.settle .lt-strip{ animation:ltSettle .68s cubic-bezier(.2,.85,.3,1.1) both; }
+@keyframes ltSpin{ from{ transform:translateY(0); } to{ transform:translateY(calc(var(--rh) * -10)); } }
+@keyframes ltSettle{ from{ transform:translateY(0); filter:blur(1.4px); } 60%{ filter:blur(0); } to{ transform:translateY(calc(var(--rh) * var(--pos) * -1)); filter:blur(0); } }
+.lt-reel.land{ animation:ltPop .4s cubic-bezier(.2,1.5,.4,1); }
+.lt-reel.hit{ box-shadow:0 0 0 2px var(--win), 0 0 18px #4ade8099; }
+.lt-reel.hit .lt-strip span{ color:var(--gold); text-shadow:0 0 10px #ffd54a99; }
+.lt-reel.old{ opacity:.45; }
+
+.lt-status{ min-height:24px; display:flex; align-items:center; justify-content:center; text-align:center; font-size:14px; color:var(--mute); }
+.lt-status.lose{ color:var(--ink); }
+.lt-status.win{ color:var(--gold); font-size:17px; font-weight:800; text-shadow:0 0 12px #ffd54a77; animation:ltPop .5s cubic-bezier(.2,1.5,.4,1); }
+
+.lt-go{ height:48px; border-radius:12px; font-size:16px; font-weight:800; color:#2a1a00; letter-spacing:.2px; touch-action:manipulation;
+  background:linear-gradient(180deg,#ffe27a,#f5a623); box-shadow:0 4px 0 #b36f0a, 0 8px 18px rgba(0,0,0,.35); transition:transform .1s, box-shadow .1s, filter .15s; }
+.lt-go:hover:not(:disabled){ filter:brightness(1.06); }
+.lt-go:active:not(:disabled){ transform:translateY(3px); box-shadow:0 1px 0 #b36f0a, 0 4px 10px rgba(0,0,0,.35); }
+.lt-go:disabled{ filter:grayscale(.45) brightness(.8); cursor:wait; }
+
+@media (max-height:700px){
+  .lt{ --rh:46px; gap:9px; }
+  .lt-d{ height:44px; font-size:28px; }
+  .lt-step{ height:22px; }
+  .lt-prize{ padding:4px 10px; }
+  .lt-go{ height:44px; }
+}
+@media (max-height:480px){   /* điện thoại xoay ngang: nút Quay luôn nằm trong tầm nhìn */
+  .shop-panel.lotto{ width:min(392px,calc(100vw - 28px)); }
+  .lt-go{ position:sticky; bottom:6px; z-index:2; }
+}
+@media (max-width:360px){ .lt-steps li{ font-size:11px; padding:6px; } .lt-prize{ grid-template-columns:40px 1fr auto; gap:8px; font-size:12px; } }
+@media (prefers-reduced-motion:reduce){
+  .lt *, .lt *::before, .lt *::after{ animation:none !important; transition:none !important; }
+}

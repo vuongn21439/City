@@ -103,7 +103,9 @@
     const sv = charData._save;
     if(sv){
       player.coins = typeof sv.coins==='number' ? sv.coins : GCITY_CONFIG.GAME.startCoins;
-      player.inventory = Object.assign({worm:10,shrimp:0,lure:0,fish:0,rod:1}, sv.inventory||{});
+      player.inventory = Object.assign({worm:10,shrimp:0,lure:0,fish:0,fishValue:0,fishDex:{},rod:1,equippedRod:0}, sv.inventory||{});
+      player.inventory.equippedRod = 0;   // cần câu chỉ được cầm khi người chơi tự trang bị trong Balo (ở đảo)
+      player.inventory.fishDex = Object.assign({}, player.inventory.fishDex||{});
     }
     curChar = { name:charData.name, gender:charData.gender, charIndex:charData.charIndex };
     saveNow();   // lưu NGAY khi tạo nhân vật, không chờ vòng lặp
@@ -140,7 +142,7 @@
     npcs = npcRaw.map(([name,g,c,x,z,f,line,act,zone,angler])=>{
       const m = Scene3D.createCharacter(g, c, name, false);
       m.position.set(x, 0, z); m.userData.face = f;
-      if(angler) m.userData.action = 'fish';     // câu sẵn ngay khi vào map
+      if(angler){ m.userData.action = 'fish'; m.userData.rodTier = 2; m.userData.lineOut = false; }   // câu sẵn ngay khi vào map: chủ chòi cầm cần cao cấp (hàng đang bán), đứng sau quầy nên không thả dây
       Scene3D.scene.add(m);
       return { m, line, x, z, home:f, cd: Math.random()*6, wv:0, act, angler:!!angler, bite: 3+Math.random()*9, zone:zone||'plaza' };
     });
@@ -215,6 +217,9 @@
   const IS_LOCAL = ['localhost','127.0.0.1','[::1]',''].includes(location.hostname);
   if(IS_LOCAL) window.__gcity = {
     setZone(id){
+      const fromZone = currentZone;
+      if(fishing) cancelFishing(false);
+      if(fromZone==='fishing') player.inventory.equippedRod = 0;   // rời đảo là cất cần
       currentZone = id; walkTo = null; ferrisRide = -1;
       Scene3D.buildZone(id);
       Scene3D.scene.add(playerMesh);
@@ -243,29 +248,44 @@
   // ---- Actions (shop/fish/etc) ----
   function handleAction(type, data){
     if(type==='fishCast'){
+      if(currentZone==='fishing' && Fishing.getState().state==='idle' && !(player.inventory.equippedRod>0)){
+        UI.toast('Hãy mở Balo và trang bị cần câu trước.'); return;
+      }
       if(currentZone!=='fishing' || !Scene3D.atDock('fishing', playerMesh.position.x, playerMesh.position.z)){
         UI.toast('Hãy đến bến câu hoặc đứng gần mép nước để quăng cần'); return;
       }
       const st = Fishing.getState().state;
       if(st==='biting' || st==='waiting'){ Fishing.reel(player, onFishEvent); return; }
       if(st!=='idle') return;                       // đang quăng / đang nhận cá: bỏ qua
+      playerMesh.userData.castLanded = false;       // lượt quăng mới: phao chưa chạm nước
       beginFishPose();                              // quay mặt ra nước + cầm cần
       if(!Fishing.cast(player, onFishEvent)) endFishPose();   // hết mồi → bỏ tư thế
     }
-    else if(type==='fishSell'){ const r=Fishing.sellAll(player); if(r.count>0) UI.toast(`Đã bán ${r.count} con cá · +${r.money} xu`); else UI.toast('Bạn chưa có cá để bán'); UI.updateHUD(player); }
-    else if(type==='buyBait'){
-      if(player.coins<data.price){ UI.toast(UI.NO_COIN); return; }
-      player.coins-=data.price; player.inventory[data.bait]=(player.inventory[data.bait]||0)+5;
-      UI.toast('Mua thành công'); UI.updateHUD(player);
+    else if(type==='fishSell'){
+      const r=Fishing.sellAll(player);
+      if(r.count>0) UI.toast(`Đã bán ${r.count} con cá · +${r.money} xu`); else UI.toast('Bạn chưa có cá để bán');
+      UI.updateHUD(player); UI.refreshFishingPanel();
     }
-    else if(type==='buyLotto'){
-      const num=(data||'').trim(); if(!/^\d{3}$/.test(num)){UI.toast('Vui lòng nhập đúng 3 chữ số');return;}
-      if(player.coins<10){UI.toast(UI.NO_COIN);return;} player.coins-=10;
-      const res=String(Math.floor(Math.random()*1000)).padStart(3,'0'); let prize=0;
-      if(num===res)prize=1000; else if(num[1]===res[1]&&num[2]===res[2])prize=100; else if(num[2]===res[2])prize=20;
-      if(prize){player.coins+=prize; UI.toast(`Chúc mừng! +${prize} xu · Kết quả: ${res}`);} else UI.toast(`Chưa trùng khớp · Kết quả: ${res}`);
-      const lr=$('lottoResult'); if(lr)lr.textContent=`${num} · Kết quả: ${res}${prize?` · +${prize} xu`:''}`;
-      UI.updateHUD(player);
+    else if(type==='buyBait'){
+      if(currentZone!=='fishing'){ UI.toast('Chỉ mua mồi tại Đảo Câu Cá.'); return; }
+      const bait = Fishing.BAITS.find(item=>item.id===data.bait);
+      if(!bait) return;
+      if(player.coins<bait.price){ UI.toast(UI.NO_COIN); return; }
+      player.coins-=bait.price;
+      player.inventory[bait.id]=(player.inventory[bait.id]||0)+bait.quantity;
+      UI.toast(`Đã mua ${bait.quantity} ${bait.name.toLowerCase()}`);
+      UI.updateHUD(player); UI.refreshFishingPanel(); saveNow();
+    }
+    else if(type==='buyLotto'){   // Số may mắn: data = [d1,d2,d3]; trả về kết quả để Lotto chạy hiệu ứng (null = bị từ chối)
+      const pick = Array.isArray(data) ? data : null;
+      if(!pick || pick.length!==3 || !pick.every(d=>Number.isInteger(d) && d>=0 && d<=9)){ UI.toast('Hãy chọn đủ 3 chữ số'); return null; }
+      if(player.coins<Lotto.FEE){ UI.toast(UI.NO_COIN); return null; }
+      const r = Lotto.draw(pick);
+      r.before = player.coins - Lotto.FEE;      // số dư sau khi trừ phí (HUD / panel hiển thị số này cho tới khi cuộn dừng)
+      player.coins = r.before + r.prize;        // trả thưởng và lưu ngay: đóng tab giữa lúc quay vẫn không mất thưởng
+      r.after = player.coins;
+      UI.holdCoin(r.before); saveNow();
+      return r;
     }
     else if(type==='rentSkate'){ if(player.coins<15){UI.toast(UI.NO_COIN);return;} player.coins-=15; speedBoost=Math.max(speedBoost,30); UI.toast('Đã thuê giày trượt · tăng tốc 30 giây'); UI.updateHUD(player); }
     else if(type==='rentVehicle'){
@@ -277,11 +297,50 @@
       player.coins -= price; UI.updateHUD(player);
       mountVehicle(slot);
     }
-    else if(type==='buyRod'){ if(player.coins<100){UI.toast(UI.NO_COIN);return;} if(player.inventory.rod>=2){UI.toast('Bạn đã có cần câu cao cấp');return;} player.coins-=100; player.inventory.rod=2; UI.toast('Đã nâng cấp cần câu'); UI.updateHUD(player); }
+    else if(type==='buyRod'){
+      if(currentZone!=='fishing'){ UI.toast('Chỉ mua cần câu tại Đảo Câu Cá.'); return; }
+      if(player.inventory.rod>=2){ UI.toast('Bạn đã sở hữu cần câu cao cấp.'); return; }
+      const price = Fishing.RODS[2].price;
+      if(player.coins<price){ UI.toast(UI.NO_COIN); return; }
+      player.coins-=price; player.inventory.rod=2;
+      UI.toast('Đã mua cần cao cấp. Trang bị trong Balo.');
+      UI.updateHUD(player); UI.refreshFishingPanel(); saveNow();
+    }
+    else if(type==='equipRod'){
+      const tier = Number(data && data.tier);
+      if(tier!==1 && tier!==2) return;
+      if(currentZone!=='fishing'){ UI.toast('Chỉ trang bị cần câu tại Đảo Câu Cá.'); return; }
+      if(Fishing.getState().state!=='idle'){ UI.toast('Hãy thu cần câu trước khi đổi cần.'); return; }
+      if(tier===2 && player.inventory.rod<2){ UI.toast('Bạn chưa sở hữu cần câu cao cấp.'); return; }
+      if(fishing) cancelFishing(false);              // đang đứng tư thế câu (dây đã thu): thôi tư thế trước khi đổi
+      const off = player.inventory.equippedRod===tier;   // bấm lại cần đang cầm = cất cần
+      player.inventory.equippedRod = off ? 0 : tier;
+      syncRodHold();
+      UI.toast(off ? 'Đã cất cần câu.' : `Đã trang bị ${Fishing.RODS[tier].name}.`);
+      UI.updateHUD(player); UI.renderInventory(player); UI.refreshFishingPanel();
+      saveNow();
+    }
   }
   // ===== Tư thế câu cá của người chơi (v20): chỉ cầm cần sau khi bấm quăng; đi hoặc bấm emote là thôi câu (mồi đã quăng coi như mất) =====
-  const FISH_ACTS = ['fish','cast','bite','reel'];
+  const FISH_ACTS = ['rod','fish','cast','bite','reel'];
   let fishing = false;
+  // Cầm cần CHỈ khi người chơi đã trang bị trong Balo và đang ở đảo. Gọi mỗi khung: tự cầm lại sau emote/ngồi/xuống xe, tự cất khi rời đảo.
+  function syncRodHold(){
+    if(fishing) return;
+    const ud = playerMesh.userData, tier = player.inventory.equippedRod>0 ? (player.inventory.equippedRod===2 && player.inventory.rod>=2 ? 2 : 1) : 0;
+    player.inventory.equippedRod = tier;
+    const canHold = tier>0 && currentZone==='fishing' && !riding && ferrisRide<0;
+    if(canHold){
+      if(!ud.action){
+        ud.action = 'rod'; ud.actionT = 0; ud.lineOut = false; player.action = 'rod';
+        try{ Net.sendMyState({ x:player.x, y:player.y, action:'rod' }); }catch(e){}
+      }
+      if(ud.action==='rod') ud.rodTier = tier;
+    } else if(ud.action==='rod'){
+      ud.action = null; ud.actionT = 0; player.action = null;
+      try{ Net.sendMyState({ x:player.x, y:player.y, action:null }); }catch(e){}
+    }
+  }
   function beginFishPose(){
     const ud = playerMesh.userData;
     ud.face = Scene3D.fishDir(playerMesh.position.x, playerMesh.position.z);   // tự quay mặt ra phía nước
@@ -289,12 +348,22 @@
     player.action = 'fish'; walkTo = null; fishing = true;
     try{ Net.sendMyState({ x:player.x, y:player.y, action:'fish' }); }catch(e){}
   }
-  function endFishPose(){
+  function endFishPose(keepRod=true){
     fishing = false;
     const ud = playerMesh.userData;
-    if(FISH_ACTS.indexOf(ud.action) >= 0){ ud.action = null; player.action = null; try{ Net.sendMyState({ x:player.x, y:player.y, action:null }); }catch(e){} }
+    if(FISH_ACTS.indexOf(ud.action) >= 0){
+      const canHold = keepRod && player.inventory.equippedRod>0 && currentZone==='fishing' && !riding && ferrisRide<0 && !Player.isSeated(ud.action);
+      const action = canHold ? 'rod' : null;
+      ud.action = action; ud.actionT = 0;
+      if(canHold){
+        ud.rodTier = player.inventory.equippedRod===2 ? 2 : 1;
+        ud.lineOut = false; ud.castLanded = false; ud.fishTarget = null;
+      }
+      player.action = action;
+      try{ Net.sendMyState({ x:player.x, y:player.y, action }); }catch(e){}
+    }
   }
-  function cancelFishing(){ Fishing.reset(); resetFishBtn(); endFishPose(); }
+  function cancelFishing(keepRod=true){ Fishing.reset(); endFishPose(keepRod); }
   // Nút 🎣 nổi bên trái (chỉ hiện ở đảo câu cá): chạm để quăng; khi cá cắn (đỏ, nhấp nháy "KÉO!") chạm để kéo
   let _fq = '';
   function refreshFishQuick(){
@@ -302,32 +371,35 @@
     const on = currentZone==='fishing' && !riding, st = Fishing.getState().state;
     const key = on + st; if(key===_fq) return; _fq = key;
     b.classList.toggle('hidden', !on);
-    b.classList.toggle('bite', st==='biting'); b.classList.toggle('wait', st==='waiting' || st==='casting');
-    b.innerHTML = '<span class="fq-ic">🎣</span><span class="fq-lb">' + (st==='biting' ? 'KÉO!' : (st==='waiting' || st==='casting' ? 'Chờ…' : 'Quăng')) + '</span>';
+    b.classList.toggle('bite', st==='biting'); b.classList.toggle('wait', st==='waiting' || st==='casting' || st==='caught');
+    const label = st==='biting' ? 'KÉO!' : st==='caught' ? 'Thu cá…' : (st==='waiting' || st==='casting' ? 'Chờ…' : 'Quăng');
+    b.innerHTML = '<span class="fq-ic">🎣</span><span class="fq-lb">' + label + '</span>';
   }
   function fishQuickTap(){
     if(currentZone!=='fishing' || riding) return;
-    if(Fishing.getState().state==='waiting'){ UI.toast('Hãy chờ cá cắn câu'); return; }   // kéo sớm là cá chạy mất → chặn (chỉ nút nổi; bảng ở NPC giữ logic cũ)
+    const state = Fishing.getState().state;
+    if(state==='waiting'){ UI.toast('Hãy chờ cá cắn câu'); return; }
+    if(state==='casting' || state==='caught') return;
     handleAction('fishCast');
   }
   function onFishEvent(ev){
     if(ev.type==='casting') UI.closePanel('fishPanel');   // đóng bảng để thấy nhân vật quăng cần
-    const b = $('fishCastBtn');
+    if(ev.type==='caught' && playerMesh) playerMesh.userData.fishId = ev.fish.id;   // màu cá hiện trên dây khi kéo lên
     if(ev.type==='error') UI.toast(ev.msg);
-    else if(ev.type==='casting'){ UI.toast('Đã quăng cần. Hãy chờ cá cắn'); b.textContent='Kéo cần'; }
-    else if(ev.type==='biting'){ UI.toast('Cá cắn câu! Hãy kéo cần ngay'); b.textContent='KÉO NGAY!'; b.style.background='linear-gradient(135deg,#ef4444,#dc2626)'; }
-    else if(ev.type==='caught'){ UI.toast(`Câu được ${ev.fish.icon} ${ev.fish.name} · ${ev.fish.value} xu`); resetFishBtn(); }
-    else if(ev.type==='escaped'||ev.type==='too_early'){ UI.toast('Cá đã thoát'); resetFishBtn(); }
+    else if(ev.type==='waiting') UI.toast('Phao đã chạm nước. Hãy chờ cá cắn');
+    else if(ev.type==='biting') UI.toast('Cá cắn câu! Hãy kéo cần ngay');
+    else if(ev.type==='caught') UI.toast(`Câu được ${ev.fish.name}`);
+    else if(ev.type==='escaped'||ev.type==='too_early') UI.toast('Cá đã thoát');
     UI.updateHUD(player);
+    UI.refreshFishingPanel();
   }
-  function resetFishBtn(){ const b=$('fishCastBtn'); if(b){b.textContent='Quăng cần'; b.style.background='';} }
 
   // E / chạm vào dòng gợi ý để tương tác (building, mini game, ghế, màn hình)
   // Game chỉ chơi qua NPC: lại gần NPC rồi chạm vào NPC (mobile) hoặc bấm E (desktop). Không có chữ gợi ý.
   const NPC_R = 5;
   const NPC_ACT = {
     race:()=>Park.openRace(), memory:()=>Park.openGame('memory'), lo:()=>Park.openGame('lo'),
-    fish:()=>UI.openPanel('fishPanel'), tv:()=>UI.openPanel('tvPanel'),
+    fish:()=>UI.openFishingPanel('fish'), tv:()=>UI.openPanel('tvPanel'),
     lottery:()=>UI.openShop('lottery'), rental:()=>openVehicleShop(),
   };
   const npcDist = n => Math.hypot(playerMesh.position.x - n.x, playerMesh.position.z - n.z);
@@ -358,7 +430,7 @@
     if(!s){ const b = Scene3D.nearBench(currentZone, playerMesh.position.x, playerMesh.position.z); if(b) toggleSit(b); return; }
     if(s.kind==='building'){
       const t = s.ref.type;
-      if(t==='fishshop'){ UI.togglePanel('fishPanel'); return; }
+      if(t==='fishshop'){ UI.openFishingPanel('shop'); return; }
       if(t==='lottery' || t==='rental'){ UI.togglePanel('shopPanel'); UI.renderShop(t); return; }
       UI.toast('Công trình này hiện chưa mở cửa');   // rạp phim / cửa hàng chỉ để trang trí (chưa có dịch vụ)
     }
@@ -422,6 +494,7 @@
       const sp = Scene3D.ferrisBoardSpot();
       ferrisRide = -1;
       playerMesh.userData.action = null; player.action = null;
+      playerMesh.userData.rideMode = null;
       playerMesh.userData.moving = false;
       playerMesh.position.set(sp.x, 0, sp.z);
       player.x = sp.x; player.y = sp.z;
@@ -436,6 +509,7 @@
     ferrisRide = best; ferrisArmed = false;
     walkTo = null;
     playerMesh.userData.action = 'ride'; playerMesh.userData.actionT = 0;
+    playerMesh.userData.rideMode = 'ferris';
     playerMesh.userData.moving = false; player.action = 'ride';
     try{ Net.sendMyState({ x:playerMesh.position.x, y:playerMesh.position.z, action:'ride' }); }catch(e){}
   }
@@ -462,11 +536,13 @@
     Scene3D.setLotTaken(slot.i, true);                  // xe rời khỏi bãi, bong bóng đếm còn x-1
     Scene3D.setLotBadgeVisible(false);
     if(slot.kind==='plane') v.rotation.order='YXZ';
-    riding = { type:slot.kind, slot:slot.i, v, prop:ud.prop||null, wheels:ud.wheels||[], seat:ud.seat, flightBoxes:ud.flightBoxes||null,
+    riding = { type:slot.kind, slot:slot.i, v, prop:ud.prop||null, wheels:ud.wheels||[], steering:ud.steering||null,
+               frontWheels:ud.frontWheels||[], seat:ud.seat, flightBoxes:ud.flightBoxes||null,
                yaw:slot.yaw, pitch:0, bank:0, alt:slot.kind==='plane'?0.03:0, targetAlt:slot.kind==='plane'?0.03:0,
                remain:Vehicles.RENT_SEC, maxSpeed:ud.maxSpeed, autoDescend:false, engine:0, speed:0, netT:0, stuckT:0, hintT:0 };
     const um = playerMesh.userData;
     um.moving = false; um.action = 'ride'; um.actionT = 0; player.action = 'ride';   // ngồi thật lên ghế (tư thế lái xe)
+    um.rideMode = slot.kind; um.vehicleSteer = 0; um.vehicleSpeed = 0; um.vehiclePitch = 0;
     walkTo = null; speedBoost = 0;
     const sp = seatWorld(riding); player.x = sp.x; player.y = sp.z;
     try{ Net.sendMyState({x:player.x, y:player.y, action:'sit'}); }catch(e){}
@@ -487,6 +563,8 @@
     playerMesh.userData.face = yaw; playerMesh.userData.moving = false;
     playerMesh.rotation.set(0,yaw,0);
     playerMesh.userData.action = null; player.action = null;
+    playerMesh.userData.rideMode = null; playerMesh.userData.vehicleSteer = 0;
+    playerMesh.userData.vehicleSpeed = 0; playerMesh.userData.vehiclePitch = 0;
     player.x = spot.x; player.y = spot.z;
     try{ Net.sendMyState({x:player.x, y:player.y, action:null}); }catch(e){}
     riding = null;
@@ -545,9 +623,16 @@
     // settles into a stationary hover; "Lùi" reduces speed/brakes to hover.
     const tgt = airborne ? (thr > 0 ? thr*r.maxSpeed : 0)
                          : (thr >= 0 ? thr*r.maxSpeed : thr*r.maxSpeed*(isPlane ? PLANE.REV : 1));
-    r.speed += (tgt - r.speed) * (isPlane ? Math.min(1, dt*(Math.abs(tgt) > Math.abs(r.speed) ? 2.2 : 3.5)) : 1);
+    r.speed += (tgt - r.speed) * (isPlane
+      ? Math.min(1, dt*(Math.abs(tgt) > Math.abs(r.speed) ? 2.2 : 3.5))
+      : Math.min(1, dt*(Math.abs(tgt) > Math.abs(r.speed) ? 3.4 : 5.2)));
     if(!airborne && Math.abs(tgt) < 0.01 && Math.abs(r.speed) < 0.15) r.speed = 0;
     const speed = r.speed;
+    playerMesh.userData.vehicleSteer = steer;
+    playerMesh.userData.vehicleSpeed = speed;
+    playerMesh.userData.vehiclePitch = isPlane ? r.pitch : 0;
+    if(r.steering) r.steering.rotation.z = -steer*0.48;
+    r.frontWheels.forEach(w => { w.rotation.y = steer*0.38; });
     // yaw tăng = mũi quay sang TRÁI (ngược chiều kim đồng hồ nhìn từ trên xuống). Máy bay có camera đuổi sau lưng nên
     // "phải" phải đánh mũi sang phải trên màn hình → đảo dấu cho máy bay (xe giữ nguyên như bản gốc).
     r.yaw += (isPlane ? -steer : steer) * dt * 2.4 * (0.25 + Math.min(1, Math.abs(speed)/7));
@@ -718,17 +803,23 @@
         if(playerMesh.userData.actionT > dur){ playerMesh.userData.action=null; player.action=null; }
       }
 
+      syncRodHold();
       // ===== tư thế câu cá (v20): chỉ khi đã bấm quăng; theo trạng thái của Fishing: quăng · chờ · cá cắn · kéo =====
       if(fishing){
         const ud2 = playerMesh.userData;
         if(currentZone!=='fishing' || riding || ferrisRide >= 0 || Player.isSeated(ud2.action)) endFishPose();
         else {
-          const fs2 = Fishing.getState().state;
+          let fs2 = Fishing.getState().state;
+          // phao thật sự chạm mặt nước (hoạt ảnh báo castLanded) → mới tính là đã quăng: trừ mồi, bắt đầu chờ cá
+          if(fs2==='casting' && ud2.action==='cast' && ud2.castLanded){ Fishing.landed(player, onFishEvent); fs2 = Fishing.getState().state; }
           const pose = fs2==='casting' ? 'cast' : fs2==='biting' ? 'bite' : fs2==='caught' ? 'reel' : 'fish';
           if(ud2.action !== pose){ ud2.action = pose; ud2.actionT = 0; }
+          ud2.rodTier = player.inventory.equippedRod===2 ? 2 : 1;
+          ud2.lineOut = (fs2==='waiting' || fs2==='biting');                       // chưa quăng / cá đã thoát → dây thu về, phao treo dưới đầu cần
         }
       }
       // update animations
+      playerMesh.userData.running = !!input.run && !!playerMesh.userData.moving && !riding && ferrisRide < 0;
       Scene3D.updateCharacter(playerMesh, dt, time);
       if(ferrisRide >= 0){
         // đặt nhân vật vào cabin SAU khi update (vì GChar.update tự ghi position.y mỗi khung)
@@ -781,13 +872,20 @@
       // zone portal (bỏ qua khi đang lái xe / bay)
       const portal = Scene3D.atPortal(currentZone, playerMesh.position.x, playerMesh.position.z);
       if(portal && !riding && ferrisRide < 0){
-        if(fishing) cancelFishing();
+        if(fishing) cancelFishing(false);
         const fromZone = currentZone;
         currentZone = portal.to; walkTo = null;
         Scene3D.buildZone(currentZone);
         // re-add player + others
         Scene3D.scene.add(playerMesh);
         player.zone = currentZone;
+        if(fromZone==='fishing'){
+          player.inventory.equippedRod = 0;   // rời đảo: cất cần; quay lại phải trang bị lại trong Balo
+          if(playerMesh.userData.action==='rod'){
+            playerMesh.userData.action=null; player.action=null;
+            try{ Net.sendMyState({ x:player.x, y:player.y, action:null }); }catch(e){}
+          }
+        }
         Object.values(otherMeshes).forEach(m=>{ Scene3D.scene.add(m); m.visible = (currentZone==='plaza'); });
         const sp = (currentZone==='plaza' && fromZone==='fishing') ? { x:0, z:32 } : Scene3D.getZone(currentZone).spawn;   // về từ đảo: đứng trước cổng tàu (không phải giữa sân)
         playerMesh.position.set(sp.x, 0, sp.z);
@@ -820,7 +918,7 @@
       else Scene3D.updateCamera(playerMesh.position.x, playerMesh.position.z,
              ferrisRide >= 0 ? playerMesh.position.y - 0.6 : (playerMesh.userData.gy||0));   // lên cabin thì camera bám theo độ cao
       Park.update(currentZone);
-      Fishing.update(dt, player, onFishEvent);
+      Fishing.update(dt, player, onFishEvent, player.inventory.equippedRod || 1);
       refreshFishQuick();
       UI.updateHUD(player);
     }

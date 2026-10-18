@@ -4,7 +4,10 @@
 const UI = (() => {
   let selectedGender = 'male', selectedChar = 0;
   let onEnterGame = null, onChatSend = null, onEmote = null, onAction = null;
+  let getPlayer = null;
+  let fishPanelTab = 'fish';
   let toastTimer = null;
+  let _coinHold = null;   // số xu HUD tạm giữ (Số may mắn: không lộ thưởng trước khi cuộn dừng)
   let _guardUntil = 0;   // chặn click "lạc" vào panel ngay sau khi chạm NPC mở panel (ghost click)
 
   function $(id){ return document.getElementById(id); }
@@ -153,13 +156,14 @@ const UI = (() => {
     onChatSend = callbacks.onChatSend;
     onEmote = callbacks.onEmote;
     onAction = callbacks.onAction;
+    getPlayer = callbacks.getPlayer;
 
     // close buttons
     document.querySelectorAll('.panel-close').forEach(btn=>{
       btn.onclick = ()=> closePanel(btn.dataset.close);
     });
     // bottom action buttons
-    $('btnEmote').onclick = ()=> togglePanel('emotePanel');
+    $('btnEmote').onclick = ()=>{ renderEmotes(); togglePanel('emotePanel'); };
     $('btnChat').onclick = ()=> togglePanel('chatPanel');
     $('btnInventory').onclick = ()=> { togglePanel('inventoryPanel'); renderInventory(callbacks.getPlayer()); };
     $('btnPlayers').onclick = ()=> { togglePanel('playersPanel'); callbacks.refreshPlayers(); };
@@ -168,23 +172,127 @@ const UI = (() => {
     $('chatSend').onclick = sendChat;
     $('chatInput').addEventListener('keydown', e=>{ if(e.key==='Enter') sendChat(); });
 
-    // emote grid
-    const grid = $('emoteGrid'); grid.innerHTML='';
-    Player.EMOTES.forEach(e=>{
-      const item = document.createElement('button');
-      item.className='emote-item';
-      item.innerHTML = `<span class="emote-icon">${e.icon}</span>${e.name}`;
-      item.onclick = ()=>{ onEmote(e.id); closePanel('emotePanel'); };
-      grid.appendChild(item);
+    // emote grid: icon nhảy / nhảy lên theo giới tính nhân vật hiện tại; vẽ lại mỗi lần mở bảng
+    function renderEmotes(){
+      const gd = (callbacks.getPlayer() || {}).gender;
+      const grid = $('emoteGrid'); grid.innerHTML='';
+      Player.EMOTES.forEach(e=>{
+        const item = document.createElement('button');
+        item.className='emote-item';
+        item.innerHTML = `<span class="emote-icon">${Player.emoteIcon(e, gd)}</span>${e.name}`;
+        item.onclick = ()=>{ onEmote(e.id); closePanel('emotePanel'); };
+        grid.appendChild(item);
+      });
+    }
+    renderEmotes();
+
+    // Fishing station tabs and delegated actions (the view is re-rendered when state changes).
+    $('fishTabs').addEventListener('click', e=>{
+      const tab = e.target.closest('[data-fish-tab]');
+      if(tab) renderFishingPanel(tab.dataset.fishTab);
+    });
+    $('fishView').addEventListener('click', e=>{
+      const tab = e.target.closest('[data-fish-tab]');
+      if(tab){ renderFishingPanel(tab.dataset.fishTab); return; }
+      const button = e.target.closest('[data-fish-action]');
+      if(!button || button.disabled) return;
+      const action = button.dataset.fishAction;
+      if(action==='buyBait') onAction('buyBait', { bait:button.dataset.bait });
+      else if(action==='buyRod') onAction('buyRod');
+      else onAction(action);
     });
 
-    // fishing
-    $('fishCastBtn').onclick = ()=> onAction('fishCast');
-    $('fishSellBtn').onclick = ()=> onAction('fishSell');
-    document.querySelectorAll('.shop-item').forEach(btn=>{
-      btn.onclick = ()=> onAction('buyBait', { bait: btn.dataset.bait, price: parseInt(btn.dataset.price) });
+  }
+
+  // Cần đang cầm: 0 = chưa cầm, 1 = cần thường, 2 = cần cao cấp
+  const heldRod = inv => { const t = (inv && inv.equippedRod)|0; return (t===2 && inv.rod>=2) ? 2 : (t===1 ? 1 : 0); };
+  const ROD_ICON = {
+    1: '<svg class="rod-ic" viewBox="0 0 40 40" aria-hidden="true"><path d="M6 35 L18 21.5" stroke="#8a5a32" stroke-width="4.2" stroke-linecap="round"/><path d="M17 22.5 L33 5" stroke="#c9a06a" stroke-width="2.4" stroke-linecap="round"/><circle cx="15.5" cy="29.5" r="3.6" fill="#5b6472" stroke="#d5dbe3" stroke-width="1.2"/><path d="M33 5 Q38 15 35 26" stroke="#ece8da" stroke-width="1" fill="none"/><circle cx="35" cy="28" r="2.6" fill="#e8503c"/><circle cx="35" cy="26.6" r="1.4" fill="#fdf6e8"/></svg>',
+    2: '<svg class="rod-ic" viewBox="0 0 40 40" aria-hidden="true"><path d="M6 35 L18 21.5" stroke="#d9b27c" stroke-width="4.6" stroke-linecap="round"/><path d="M5 36 L7.4 33.3" stroke="#2b2b2b" stroke-width="5" stroke-linecap="round"/><path d="M17 22.5 L34 4" stroke="#1d2230" stroke-width="2.6" stroke-linecap="round"/><circle cx="21" cy="18.4" r="1.7" fill="none" stroke="#e0b84a" stroke-width="1"/><circle cx="26" cy="13" r="1.4" fill="none" stroke="#e0b84a" stroke-width="1"/><circle cx="30.4" cy="8.2" r="1.1" fill="none" stroke="#e0b84a" stroke-width="1"/><circle cx="15.5" cy="29.8" r="4.6" fill="#c9ced6" stroke="#e0b84a" stroke-width="1.6"/><circle cx="15.5" cy="29.8" r="1.6" fill="#e0b84a"/><path d="M34 4 Q39 15 36 25" stroke="#ece8da" stroke-width="1" fill="none"/><ellipse cx="36" cy="28" rx="2" ry="3.4" fill="#e8503c"/><ellipse cx="36" cy="25.6" rx="2" ry="2" fill="#ffc83d"/></svg>'
+  };
+
+  function renderFishingPanel(tab){
+    if(tab) fishPanelTab = tab;
+    const player = getPlayer ? getPlayer() : null;
+    if(!player) return;
+    const inv = player.inventory || {};
+    const fishState = typeof Fishing !== 'undefined' ? Fishing.getState().state : 'idle';
+    const equipped = heldRod(inv);
+    const rodName = equipped ? Fishing.RODS[equipped].name : 'Chưa cầm cần';
+    const baitTotal = (inv.worm||0) + (inv.shrimp||0) + (inv.lure||0);
+    const fishCount = inv.fish||0;
+    const view = $('fishView');
+    document.querySelectorAll('.fish-tab').forEach(button=>{
+      const active = button.dataset.fishTab === fishPanelTab;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
     });
 
+    if(fishPanelTab==='shop'){
+      const baitCards = Fishing.BAITS.map(bait=>`
+        <article class="bait-card">
+          <div class="bait-icon">${bait.icon}</div>
+          <div class="bait-details">
+            <div class="bait-title"><b>${bait.name}</b><span>${fmt(inv[bait.id]||0)} trong túi</span></div>
+            <p>${bait.note}</p>
+            <small>Thu hút: ${bait.attracts}</small>
+          </div>
+          <button class="bait-buy" type="button" data-fish-action="buyBait" data-bait="${bait.id}">
+            Mua ${bait.quantity} · ${bait.price} xu
+          </button>
+        </article>`).join('');
+      const ownsPremium = inv.rod >= 2;
+      view.innerHTML = `
+        <div class="fish-shop-intro"><b>Chuẩn bị cho chuyến câu</b><span>Mỗi gói có ${Fishing.BAITS[0].quantity} mồi.</span></div>
+        <div class="bait-list">${baitCards}</div>
+        <article class="premium-rod-card">
+          <div class="premium-rod-badge">✦</div>
+          <div class="premium-rod-copy"><b>Cần câu cao cấp</b><p>${Fishing.RODS[2].durability} · quăng xa hơn và tăng cơ hội gặp cá hiếm.</p><small>Mua một lần · ${Fishing.RODS[2].price} xu</small></div>
+          <button class="rod-buy" type="button" data-fish-action="buyRod" ${ownsPremium?'disabled':''}>${ownsPremium?'Đã sở hữu':'Mua cần'}</button>
+        </article>
+        ${ownsPremium?'<p class="fish-hint">Mở Balo trên đảo để chọn cần đang trang bị.</p>':''}`;
+    } else if(fishPanelTab==='codex'){
+      const dex = inv.fishDex || {};
+      const entries = Fishing.FISH_TYPES.map(fish=>{
+        const bait = Fishing.BAITS.find(item=>item.id===fish.preferredBait);
+        const caught = dex[fish.id]||0;
+        return `<article class="codex-card rarity-${fish.id}">
+          <div class="codex-icon">${fish.icon}</div>
+          <div class="codex-copy"><div class="codex-title"><b>${fish.name}</b><span>${fish.rarity}</span></div>
+            <p>${fish.description}</p><small>Mồi hợp: ${bait ? bait.name : '—'} · Giá bán: ${fmt(fish.value)} xu</small>
+          </div><div class="codex-count"><b>${fmt(caught)}</b><small>${caught===1?'lần':'lần'}</small></div>
+        </article>`;
+      }).join('');
+      view.innerHTML = `<div class="codex-intro"><b>Sổ cá</b><span>Ghi nhận ${fmt(Fishing.FISH_TYPES.length)} loài quanh đảo.</span></div><div class="codex-list">${entries}</div>`;
+    } else {
+      const actionLabel = fishState==='biting' ? 'KÉO NGAY!' :
+        (fishState==='waiting' || fishState==='casting' ? 'Đang chờ cá…' :
+          (fishState==='caught' ? 'Đang thu cần…' : (equipped ? 'Quăng cần' : 'Chưa cầm cần')));
+      const castDisabled = fishState==='waiting' || fishState==='casting' || fishState==='caught' || (fishState==='idle' && !equipped);
+      view.innerHTML = `
+        <div class="fish-hero">
+          <div class="fish-hero-water"><span class="fish-ripple ripple-one"></span><span class="fish-ripple ripple-two"></span><span class="fish-hero-float">🎣</span></div>
+          <div class="fish-hero-copy"><span class="fish-eyebrow">SẴN SÀNG RA KHƠI?</span><b>Chờ phao rung rồi kéo cá lên.</b><small>Mồi sẽ được trừ khi phao chạm mặt nước.</small></div>
+        </div>
+        <div class="fish-stat-grid">
+          <div class="fish-stat"><span>🎣</span><small>Cần đang cầm</small><b id="fishRodValue">${rodName}</b></div>
+          <div class="fish-stat"><span>🪱</span><small>Mồi trong túi</small><b id="fishBaitValue">${fmt(baitTotal)}</b></div>
+          <div class="fish-stat"><span>🐟</span><small>Cá trong túi</small><b id="fishCountValue">${fmt(fishCount)}</b></div>
+        </div>
+        <div class="fish-main-actions">
+          <button class="fish-cast-action ${fishState==='biting'?'is-biting':''}" type="button" data-fish-action="fishCast" ${castDisabled?'disabled':''}><span>🎣</span>${actionLabel}</button>
+          <button class="fish-sell-action" type="button" data-fish-action="fishSell" ${fishCount?'':'disabled'}>Bán cá đã câu</button>
+        </div>
+        <p class="fish-hint">${equipped ? 'Mồi khác nhau sẽ thu hút nhóm cá khác nhau. Xem <button type="button" data-fish-tab="codex">Sổ cá</button> để chọn mồi phù hợp.' : 'Mở Balo, chọn cần câu để trang bị rồi mới quăng cần.'}</p>`;
+    }
+  }
+  function openFishingPanel(tab){
+    if(tab) fishPanelTab = tab;
+    openPanel('fishPanel');
+    renderFishingPanel();
+  }
+  function refreshFishingPanel(){
+    if(!$('fishPanel').classList.contains('hidden')) renderFishingPanel();
   }
 
   function sendChat(){
@@ -212,35 +320,25 @@ const UI = (() => {
   // ---- Shop content (lottery / rental): mỗi toà / NPC mở đúng dịch vụ của mình ----
   function renderShop(tab){
     const c = $('shopContent');
+    const panel = $('shopPanel');
+    panel.classList.toggle('lotto', tab==='lottery');
+    $('shopTitle').textContent = tab==='lottery' ? '🍀 Số may mắn' : '🏪 Dịch vụ thành phố';
     if(tab==='lottery'){
-      c.innerHTML = `
-        <div class="shop-service">
-          <h4>🍀 Số may mắn</h4>
-          <p>Chọn 3 chữ số. Phần thưởng tối đa 1.000 xu. Phí tham gia: 10 xu.</p>
-          <input id="lottoNum" type="text" maxlength="3" placeholder="Ví dụ: 123" style="width:100%;padding:8px;background:#1e1e30;border:1px solid #2a2a44;border-radius:6px;color:#fff;margin-bottom:8px;text-align:center;font-size:18px;letter-spacing:4px;" />
-          <button class="btn-primary" id="buyLotto">Tham gia (10 xu)</button>
-        </div>
-        <div class="shop-service">
-          <h4>📊 Kết quả gần nhất</h4>
-          <p id="lottoResult">Chưa có kết quả.</p>
-        </div>`;
-      $('buyLotto').onclick = ()=> onAction('buyLotto', $('lottoNum').value);
+      Lotto.mount(c, { getCoins: ()=> getPlayer().coins, play: pick => onAction('buyLotto', pick), release: releaseCoin, toast });
     } else if(tab==='rental'){
       c.innerHTML = `
         <div class="shop-service">
           <h4>🎿 Giày trượt · tăng tốc 30 giây</h4>
           <p>Giá: 15 xu</p>
           <button class="btn-secondary" id="rentSkate">Thuê giày (15 xu)</button>
-        </div>
-        <div class="shop-service">
-          <h4>🎣 Cần câu cao cấp</h4>
-          <p>Tăng tỉ lệ câu được cá lớn. Giá: 100 xu</p>
-          <button class="btn-secondary" id="buyRod">Mua cần (100 xu)</button>
         </div>`;
       $('rentSkate').onclick = ()=> onAction('rentSkate');
-      $('buyRod').onclick = ()=> onAction('buyRod');
     }
   }
+
+  // HUD giữ nguyên số xu cũ tới khi cuộn số dừng hẳn (kết quả đã được tính và lưu từ lúc bấm Quay)
+  function holdCoin(n){ _coinHold = n; $('hudCoin').textContent = fmt(n); }
+  function releaseCoin(){ _coinHold = null; if(getPlayer) updateHUD(getPlayer()); }
 
   // ---- Thuê xe / máy bay (NPC Tài Xế): list = [{i, kind, name, cssColor, price, taken}] ----
   function renderVehicleShop(list){
@@ -268,7 +366,6 @@ const UI = (() => {
       { icon:'🪱', name:'Giun', count:p.inventory.worm },
       { icon:'🦐', name:'Tép', count:p.inventory.shrimp },
       { icon:'✨', name:'Mồi giả', count:p.inventory.lure },
-      { icon:'🎣', name:(p.inventory.rod>=2 ? 'Cần cao cấp' : 'Cần cơ bản'), count:1 },
     ];
     items.forEach(it=>{
       const slot = document.createElement('div');
@@ -276,6 +373,26 @@ const UI = (() => {
       slot.innerHTML = `${it.icon}<span class="inv-name">${it.name}</span><span class="inv-count">${it.count}</span>`;
       c.appendChild(slot);
     });
+    // Cần câu: chỉ trang bị được ở Đảo Câu Cá. Bấm cần chưa cầm = cầm, bấm cần đang cầm = cất.
+    const equipped = heldRod(p.inventory), onIsland = p.zone==='fishing';
+    const head = document.createElement('p');
+    head.className = 'inv-section';
+    head.textContent = 'Cần câu';
+    c.appendChild(head);
+    (p.inventory.rod >= 2 ? [1,2] : [1]).forEach(tier=>{
+      const on = equipped===tier;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'inv-slot inv-rod-slot' + (on ? ' equipped' : '') + (onIsland ? '' : ' locked');
+      button.innerHTML = `${ROD_ICON[tier]}<span class="inv-name">${Fishing.RODS[tier].name}</span><span class="inv-count">${on ? 'Đang cầm' : (onIsland ? 'Trang bị' : '—')}</span>`;
+      button.setAttribute('aria-label', (on ? 'Cất ' : 'Trang bị ') + Fishing.RODS[tier].name);
+      button.onclick = ()=> onAction('equipRod', { tier });
+      c.appendChild(button);
+    });
+    const note = document.createElement('p');
+    note.className = 'inventory-note';
+    note.textContent = onIsland ? (equipped ? 'Bấm cần đang cầm để cất.' : 'Chọn một cần câu để trang bị.') : 'Chỉ trang bị cần câu tại Đảo Câu Cá.';
+    c.appendChild(note);
   }
 
   // ---- Players list ----
@@ -295,12 +412,14 @@ const UI = (() => {
   // ---- HUD update ----
   function updateHUD(p){
     $('hudName').textContent = p.name;
-    $('hudCoin').textContent = fmt(p.coins);
+    $('hudCoin').textContent = fmt(_coinHold != null ? _coinHold : p.coins);
     $('hudZone').textContent = (Scene3D.getZone(p.zone)||{}).name || '';
-    $('fishCount').textContent = p.inventory.fish;
-    const bait = p.inventory.lure>0?`Mồi giả (${p.inventory.lure})`:(p.inventory.shrimp>0?`Tép (${p.inventory.shrimp})`:`Giun (${p.inventory.worm})`);
-    $('fishBait').textContent = bait;
-    $('fishRod').textContent = p.inventory.rod>=2?'Cần cao cấp':'Cần cơ bản';
+    const fishCount = $('fishCountValue'); if(fishCount) fishCount.textContent = fmt(p.inventory.fish||0);
+    const baitCount = $('fishBaitValue');
+    if(baitCount) baitCount.textContent = fmt((p.inventory.worm||0)+(p.inventory.shrimp||0)+(p.inventory.lure||0));
+    const rodValue = $('fishRodValue');
+    const equipped = heldRod(p.inventory);
+    if(rodValue) rodValue.textContent = equipped ? Fishing.RODS[equipped].name : 'Chưa cầm cần';
   }
 
   // ---- Toast ----
@@ -342,6 +461,6 @@ const UI = (() => {
 
   return { setLoading, hideLoading, initCharSelect, openCharSwitch, closeCharSwitch, showCharSelect, hideCharSelect,
     askConfirm, closeConfirm, fmt, NO_COIN,
-    togglePanel, closePanel, openPanel, openShop, initPanels, addChat, updateHUD, toast, initJoystick,
-    renderInventory, renderPlayers, renderShop, renderVehicleShop, guardTap };
+    togglePanel, closePanel, openPanel, openShop, openFishingPanel, refreshFishingPanel, initPanels, addChat, updateHUD, toast, initJoystick,
+    renderFishingPanel, renderInventory, renderPlayers, renderShop, renderVehicleShop, guardTap, holdCoin, releaseCoin };
 })();
