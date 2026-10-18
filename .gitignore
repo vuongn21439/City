@@ -1,0 +1,10 @@
+# Bản build của GitHub Actions
+_site/
+
+# File khoá YouTube — TUYỆT ĐỐI KHÔNG commit (bản trong repo luôn là mảng rỗng)
+# Nếu không may đã lỡ commit key thật, xoá file này khỏi lịch sử git trước khi push lại
+js/keys.js.local
+js/keys.local.js
+
+node_modules/
+.DS_Store

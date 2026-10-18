@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>GCITY 3D</title>
+<link rel="stylesheet" href="css/style.css" />
+<!-- three.js r186 (ES module). Muốn chạy offline: tải three.module.min.js + three.core.min.js về js/vendor/ rồi đổi URL bên dưới -->
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.min.js" } }
+</script>
+<script type="module" src="js/three-global.js"></script>
+</head>
+<body class="dark">
+
+<!-- ===== LOADING SCREEN ===== -->
+<div id="loadingScreen" class="loading-screen">
+  <div class="loading-inner">
+    <div class="loading-logo">GCITY 3D</div>
+    <div class="loading-sub">Một góc thành phố, một góc nhìn mới.</div>
+    <div class="loading-bar"><div id="loadingBar" class="loading-bar-fill"></div></div>
+    <div id="loadingText" class="loading-text">Đang tải trò chơi…</div>
+  </div>
+</div>
+
+<!-- ===== CHARACTER SELECT ===== -->
+<div id="charSelect" class="char-select hidden">
+  <div class="char-panel">
+    <button id="charClose" class="char-close hidden" title="Đóng" aria-label="Đóng">✕</button>
+    <h2 class="char-title">Chọn nhân vật</h2>
+    <div class="char-gender-tabs">
+      <button class="gender-tab active" data-gender="male">Nam</button>
+      <button class="gender-tab" data-gender="female">Nữ</button>
+    </div>
+    <div id="charGrid" class="char-grid"></div>
+    <div class="char-name-row">
+      <input id="charName" type="text" maxlength="16" placeholder="Tên nhân vật…" value="Player" />
+    </div>
+    <button id="enterGameBtn" class="btn-primary btn-large">Vào thành phố</button>
+  </div>
+</div>
+
+<!-- ===== GAME SCREEN ===== -->
+<div id="gameScreen" class="game-screen hidden">
+  <div id="threeContainer"></div>
+  <iframe id="tvFrame" title="GCITY TV" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+
+  <button class="hud-back" id="btnExit" title="Thoát">←</button>
+  <!-- Top HUD -->
+  <div class="hud-top">
+    <div class="hud-player">
+      <span id="hudName" class="hud-name">Player</span>
+      <span class="hud-coin">🪙 <span id="hudCoin">100</span></span>
+    </div>
+    <span class="hud-zone" id="hudZone">Quảng trường</span>
+  </div>
+
+  <!-- Bottom action bar -->
+  <div class="hud-bottom">
+    <button class="action-btn" id="btnChar" title="Đổi nhân vật"><span class="ic">🧍</span><span class="lb">Đổi</span></button>
+    <button class="action-btn" id="btnRun" title="Chạy"><span class="ic">🏃</span><span class="lb">Chạy</span></button>
+    <button class="action-btn" id="btnEmote" title="Hành động"><span class="ic">🕺</span><span class="lb">Hành động</span></button>
+    <button class="action-btn" id="btnChat" title="Chat"><span class="ic">💬</span><span class="lb">Chat</span></button>
+    <button class="action-btn" id="btnInventory" title="Túi đồ"><span class="ic">🎒</span><span class="lb">Túi</span></button>
+    <button class="hud-players" id="btnPlayers" title="Người chơi">👥 <span id="playerCount">1</span></button>
+  </div>
+
+  <!-- Nút câu cá nhanh (chỉ hiện ở đảo câu cá) -->
+  <button id="fishQuick" class="fish-quick hidden" title="Quăng / kéo cần"><span class="fq-ic">🎣</span><span class="fq-lb">Quăng</span></button>
+
+  <div id="fps" class="fps"></div>
+  <!-- Joystick (mobile) -->
+  <div id="joystick" class="joystick">
+    <div id="joystickKnob" class="joystick-knob"></div>
+  </div>
+
+  <!-- Chat panel -->
+  <div id="chatPanel" class="panel chat-panel hidden">
+    <div class="panel-header">
+      <span>Trò chuyện</span>
+      <button class="panel-close" data-close="chatPanel">✕</button>
+    </div>
+    <div id="chatHistory" class="chat-history"></div>
+    <div class="chat-input-row">
+      <input id="chatInput" type="text" maxlength="120" placeholder="Nhập tin nhắn…" />
+      <button id="chatSend" class="btn-primary">Gửi</button>
+    </div>
+  </div>
+
+  <!-- Emote/Action panel -->
+  <div id="emotePanel" class="panel emote-panel hidden">
+    <div class="panel-header">
+      <span>Hành động</span>
+      <button class="panel-close" data-close="emotePanel">✕</button>
+    </div>
+    <div id="emoteGrid" class="emote-grid"></div>
+  </div>
+
+  <!-- Fishing panel -->
+  <div id="fishPanel" class="panel fish-panel hidden">
+    <div class="panel-header">
+      <span>🎣 Đảo câu cá</span>
+      <button class="panel-close" data-close="fishPanel">✕</button>
+    </div>
+    <div class="fish-stats">
+      <div>Cần câu: <b id="fishRod">Cần cơ bản</b></div>
+      <div>Mồi: <b id="fishBait">Giun (10)</b></div>
+      <div>Cá đã bắt: <b id="fishCount">0</b></div>
+    </div>
+    <div class="fish-area">
+      <div class="fish-water">
+        <div id="fishFloat" class="fish-float">🎣</div>
+      </div>
+      <button id="fishCastBtn" class="btn-primary btn-wide">Quăng cần</button>
+      <button id="fishSellBtn" class="btn-secondary btn-wide">Bán tất cả cá</button>
+    </div>
+    <div class="fish-shop">
+      <div class="shop-title">Mua mồi</div>
+      <button class="shop-item" data-bait="worm" data-price="5">🪱 Giun · 5 xu</button>
+      <button class="shop-item" data-bait="shrimp" data-price="15">🦐 Tép · 15 xu</button>
+      <button class="shop-item" data-bait="lure" data-price="40">✨ Mồi giả · 40 xu</button>
+    </div>
+  </div>
+
+  <!-- Shop panel -->
+  <div id="shopPanel" class="panel shop-panel hidden">
+    <div class="panel-header">
+      <span>🏪 Dịch vụ thành phố</span>
+      <button class="panel-close" data-close="shopPanel">✕</button>
+    </div>
+    <div id="shopContent" class="shop-content"></div>
+  </div>
+
+  <!-- Inventory panel -->
+  <div id="inventoryPanel" class="panel inventory-panel hidden">
+    <div class="panel-header">
+      <span>🎒 Túi đồ</span>
+      <button class="panel-close" data-close="inventoryPanel">✕</button>
+    </div>
+    <div id="inventoryContent" class="inventory-content"></div>
+  </div>
+
+  <!-- Players panel -->
+  <div id="playersPanel" class="panel players-panel hidden">
+    <div class="panel-header">
+      <span>👥 Người chơi</span>
+      <button class="panel-close" data-close="playersPanel">✕</button>
+    </div>
+    <div id="playersList" class="players-list"></div>
+  </div>
+
+  <div id="tvPanel" class="panel tv-panel hidden">
+    <div class="panel-header"><span>📺 GCITY TV</span><button class="panel-close" data-close="tvPanel">✕</button></div>
+    <div class="tv-body">
+      <input id="tvUrl" type="text" placeholder="Tên video hoặc liên kết YouTube" autocomplete="off" enterkeyhint="search" />
+      <button id="tvPlay" class="btn-primary btn-wide">Tìm / Phát</button>
+      <div id="tvResults" class="tv-results"></div>
+      <button id="tvStop" class="btn-secondary btn-wide">Dừng</button>
+    </div>
+  </div>
+  <div id="vehiclePanel" class="panel veh-panel hidden">
+    <div class="panel-header"><span>🚗 Thuê phương tiện</span><button class="panel-close" data-close="vehiclePanel">✕</button></div>
+    <div id="vehicleList" class="veh-body"></div>
+  </div>
+  <div id="gamePanel" class="panel mini-panel hidden">
+    <div class="panel-header"><span id="gameTitle">🎮 Trò chơi</span><button class="panel-close" data-close="gamePanel">✕</button></div>
+    <div id="gameBody" class="mg-body"></div>
+  </div>
+
+  <!-- Vehicle control HUD (khi đang ngồi xe/máy bay thuê) -->
+  <div id="vehicleHud" class="vehicle-hud hidden">
+    <button id="rentTimer" class="rent-timer" title="Xuống xe">Xuống xe · 5:00</button>
+    <div id="vehicleBtns" class="vehicle-btns">
+      <button class="vbtn" id="vUp">Bay lên ↑</button>
+      <button class="vbtn" id="vDown">Hạ cánh ↓</button>
+      <button class="vbtn" id="vBack">Lùi</button>
+      <button class="vbtn" id="vFwd">Tiến</button>
+    </div>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+</div>
+
+<!-- Hộp xác nhận chung (thoát game...) -->
+<div id="confirmBox" class="confirm-box hidden">
+  <div class="confirm-card">
+    <p id="confirmMsg"></p>
+    <div class="confirm-btns">
+      <button id="confirmNo" class="btn-secondary">Ở lại</button>
+      <button id="confirmYes" class="btn-primary">Đồng ý</button>
+    </div>
+  </div>
+</div>
+
+<script defer src="js/keys.js"></script>
+<script defer src="js/config.js"></script>
+<script defer src="js/net.js"></script>
+<script defer src="js/player.js"></script>
+<script defer src="js/fishing.js"></script>
+<script defer src="js/ui.js"></script>
+<script defer src="js/character.js"></script>
+<script defer src="js/animals.js"></script>
+<script defer src="js/fountain.js"></script>
+<script defer src="js/vehicles.js"></script>
+<script defer src="js/island.js"></script>
+<script defer src="js/three-scene.js"></script>
+<script defer src="js/ytkeys.js"></script>
+<script defer src="js/park.js"></script>
+<script defer src="js/game.js"></script>
+</body>
+</html>
