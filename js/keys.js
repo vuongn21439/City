@@ -3,5 +3,6 @@
  */
 window.GCITY_KEYS = [
   "AIzaSyC-WpmofuFqCZB12C2B8fKOL_85qfLJTSg",
-  "AIzaSyCcGm4Avqgl-o9wnsta5PQPrcnMyd3Y7GQ"
+  "AIzaSyCcGm4Avqgl-o9wnsta5PQPrcnMyd3Y7GQ",
+  "AIzaSyBuvQcYLMe6pkRNUOm7sDYa_rBbvoGEQhs"
 ];

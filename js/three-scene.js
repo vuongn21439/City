@@ -23,7 +23,7 @@ const Scene3D = (() => {
   const RES = { max:Math.min(window.devicePixelRatio||1, 3), min:1, cur:1, n:0, t:0, low:0, warm:true, fixed:false };
   const maxAniso = () => Math.min(8, renderer.capabilities.getMaxAnisotropy());   // nền gạch không bị nhoè khi nhìn xiên
   let waterMesh = null, fountainFx = null;
-  let screenInfo = null, screenCanvas = null, screenTex = null, spinners = [];
+  let screenInfo = null, screenCanvas = null, screenTex = null, tvHole = null, spinners = [];
   let ferris = null, racers = [], raceCanvas = null, raceTex = null;
   const FERRIS_SPEED = 0.2;                                          // rad/giây
   const FERRIS_CAB = { floor:-2.62, seat:{ x:0, y:-2.90, z:0.10 }, yaw:Math.PI };  // mặt sàn cabin + gốc chân nhân vật khi ngồi (toạ độ cục bộ so với chốt treo)
@@ -86,7 +86,8 @@ const Scene3D = (() => {
     scene.fog = new THREE.Fog(0xbfe9f4, 110, 260);
 
     camera = new THREE.PerspectiveCamera(CAM.fov, window.innerWidth/window.innerHeight, 0.1, 400);
-    renderer = new THREE.WebGLRenderer({ antialias:true });
+    renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });   // alpha:true: màn hình TV đục "lỗ" trong suốt để lộ iframe YouTube nằm DƯỚI canvas (xem tvHole)
+    renderer.setClearAlpha(1);                                            // nền trời vẫn đặc 100%, chỉ có lỗ TV là trong suốt
     GFX.setupRenderer(renderer);   // sRGB + tone mapping (three r186) — thêm ?legacy=1 vào URL để xem lại kiểu màu cũ
     const qRes = parseFloat(new URLSearchParams(location.search).get('res'));
     if(qRes > 0){ RES.max = camClamp(qRes, 0.5, 3); RES.fixed = true; }
@@ -113,16 +114,20 @@ const Scene3D = (() => {
 
     // camera orbit: kéo 1 ngón/chuột = xoay + nghiêng; lăn chuột / chụm 2 ngón = zoom
     const cv = renderer.domElement;
-    cv.style.touchAction = 'none';   // chặn trình duyệt cuộn/zoom trang khi kéo trên canvas
+    // Canvas nằm TRÊN iframe YouTube (để vật thể 3D che được video) nên không nhận chạm; lớp #camInput nằm dưới iframe nhận kéo/xoay/zoom,
+    // còn chạm vào vùng video thì xuyên qua canvas xuống iframe (bấm được nút của YouTube như cũ).
+    const inp = document.getElementById('camInput') || cv;
+    cv.style.pointerEvents = (inp !== cv) ? 'none' : 'auto';   // không có #camInput → canvas tự nhận chạm như cũ
+    inp.style.touchAction = 'none';   // chặn trình duyệt cuộn/zoom trang khi kéo trên canvas
     const tapInfo = new Map();   // pointerId -> {x,y,t,ok}: phân biệt "chạm" với "kéo xoay camera"
-    cv.addEventListener('pointerdown', e=>{
+    inp.addEventListener('pointerdown', e=>{
       if(e.pointerType==='mouse'){ camPtr.clear(); tapInfo.clear(); }
-      try{ cv.setPointerCapture(e.pointerId); }catch(_){}
+      try{ inp.setPointerCapture(e.pointerId); }catch(_){}
       camPtr.set(e.pointerId, [e.clientX, e.clientY]);
       if(camPtr.size>1) tapInfo.forEach(t=>{ t.ok = false; });   // 2 ngón (zoom) thì không tính là chạm
       tapInfo.set(e.pointerId, { x:e.clientX, y:e.clientY, t:performance.now(), ok:camPtr.size===1 });
     });
-    cv.addEventListener('pointermove', e=>{
+    inp.addEventListener('pointermove', e=>{
       const p = camPtr.get(e.pointerId); if(!p) return;
       const ti = tapInfo.get(e.pointerId); if(ti && Math.hypot(e.clientX-ti.x, e.clientY-ti.y) > 10) ti.ok = false;
       if(camPtr.size===1){
@@ -138,15 +143,15 @@ const Scene3D = (() => {
       p[0]=e.clientX; p[1]=e.clientY;
     });
     const camPtrEnd = e=>{ camPtr.delete(e.pointerId); tapInfo.delete(e.pointerId); };
-    cv.addEventListener('pointerup', e=>{
+    inp.addEventListener('pointerup', e=>{
       const ti = tapInfo.get(e.pointerId);
       camPtrEnd(e);
       if(ti && ti.ok && tapHandler && e.button===0 && performance.now()-ti.t < 500) tapHandler(e.clientX, e.clientY);
     });
-    cv.addEventListener('pointercancel', camPtrEnd);
-    cv.addEventListener('lostpointercapture', camPtrEnd);
+    inp.addEventListener('pointercancel', camPtrEnd);
+    inp.addEventListener('lostpointercapture', camPtrEnd);
     window.addEventListener('blur', ()=>{ camPtr.clear(); tapInfo.clear(); });   // tránh kẹt trạng thái "đang kéo" khi mất focus
-    cv.addEventListener('wheel', e=>{ setCamDist(camDist*(1+(e.deltaMode===1? e.deltaY*33 : e.deltaY)*0.001)); }, {passive:true});
+    inp.addEventListener('wheel', e=>{ setCamDist(camDist*(1+(e.deltaMode===1? e.deltaY*33 : e.deltaY)*0.001)); }, {passive:true});
     window.addEventListener('resize', ()=>{
       camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -814,7 +819,7 @@ const Scene3D = (() => {
     worldGroup = new THREE.Group();
     curZoneId = zoneId;
     const z = ZONES[zoneId];
-    waterMesh = null; fountainFx = null; screenInfo = null; screenCanvas = null; spinners = []; ferris = null; racers = []; raceCanvas = null;
+    waterMesh = null; fountainFx = null; screenInfo = null; screenCanvas = null; tvHole = null; spinners = []; ferris = null; racers = []; raceCanvas = null;
     animFns = []; nightReg = [];         // đăng ký lại toàn bộ hiệu ứng ban đêm + hoạt ảnh của zone vừa dựng
     nightDirty = true;                   // dựng xong sẽ áp lại trạng thái trời cho mọi vật thể của zone
 
@@ -917,6 +922,12 @@ const Scene3D = (() => {
       screenTex = new THREE.CanvasTexture(screenCanvas);
       const panel = new THREE.Mesh(new THREE.PlaneGeometry(sc.w, sc.h), new THREE.MeshBasicMaterial({map:screenTex}));
       panel.position.set(0, cy, 0.16); g.add(panel);
+      // "Lỗ" TV: ghi (0,0,0,0) vào canvas đúng vị trí iframe YouTube (cùng mặt phẳng z+0.18 với screenCorners2D) => nhìn xuyên xuống video.
+      // Có depth test như vật thể thường nên cây / vòng đu quay / người đứng TRƯỚC màn hình sẽ che video đúng như thật.
+      tvHole = new THREE.Mesh(new THREE.PlaneGeometry(sc.w*0.996, sc.h*0.996), new THREE.MeshBasicMaterial({ color:0x000000, fog:false, toneMapped:false,
+        blending:THREE.CustomBlending, blendEquation:THREE.AddEquation, blendSrc:THREE.ZeroFactor, blendDst:THREE.ZeroFactor, blendSrcAlpha:THREE.ZeroFactor, blendDstAlpha:THREE.ZeroFactor,
+        polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1 }));
+      tvHole.position.set(0, cy, 0.18); tvHole.visible = false; tvHole.raycast = () => {}; g.add(tvHole);
       // ===== MẶT SAU TV (thân TV) — nhìn từ đằng sau thấy nắp lưng + khe tản nhiệt, KHÔNG thấy video =====
       const backMat = new THREE.MeshLambertMaterial({color:0x11151c});
       const back = new THREE.Mesh(new THREE.BoxGeometry(sc.w+0.5, sc.h+0.5, 0.14), backMat);
@@ -995,16 +1006,41 @@ const Scene3D = (() => {
 
   // ===== ANIMATION (đi/chạy/ngồi/vẫy/nhảy/7 điệu nhảy + thở, chớp mắt, tóc đung đưa) =====
   // Độ cao mặt đất tại (x,z): sân khấu (sàn gỗ 22×7, cao 0.5, tâm (0,-35)) + 3 bậc thang trước sân khấu (rộng 5, mỗi bậc sâu 1: 0.45 / 0.30 / 0.15)
-  function groundY(zoneId, x, z){
+  // + nền gạch đá đỏ quanh đài phun / các nhánh đường (cao 0.09–0.13) + viên gạch viền (0.23) + vòng đá/đất dưới gốc cây (0.22 / 0.28).
+  // noDecor=true: bỏ qua lớp nền trang trí (dùng cho nhân vật ngồi ghế — ghế được dựng sẵn theo mốc y=0 nên tư thế ngồi đã tính sẵn)
+  function plazaDecorY(x, z){
+    let y = 0;
+    const d = Math.hypot(x, z);
+    // sân tròn quanh đài phun (CircleGeometry r=11, mặt y=0.13) + 36 viên gạch viền ở r=11.7 (0.9×0.55, đỉnh y=0.23)
+    if(d < 11) y = 0.13;
+    else if(d < 12.4){
+      for(let i=0;i<36;i++){ const a=i/36*Math.PI*2; if(Math.abs(x-Math.cos(a)*11.7)<0.45 && Math.abs(z-Math.sin(a)*11.7)<0.275){ y = 0.23; break; } }
+    }
+    if(y < 0.09){   // chữ thập đá đỏ + 4 nhánh nối ra (mặt y=0.09)
+      const ax = Math.abs(x), az = Math.abs(z);
+      if((az<=3 && ax<=17) || (ax<=3 && az<=17)
+        || (ax<=3 && z>=-28.5 && z<=-23.6) || (ax<=3 && z>=23.6 && z<=40.8)
+        || (az<=3 && x>=-37.2 && x<=-23.6) || (az<=3 && x>=23.6 && x<=34)) y = 0.09;
+    }
+    if(y < 0.13 && Math.hypot(x, z-38) < 6.2) y = 0.13;   // sân tròn trước cổng tàu
+    // vòng đá kem (r≈1.75, cao 0.22) + đất (r≈1.5, cao 0.28) dưới gốc cây — cùng kích thước với makeTree(base=true)
+    for(const t of ZONES.plaza.trees||[]){
+      const dt = Math.hypot(x-t.x, z-t.z);
+      if(dt < 1.5){ if(y < 0.28) y = 0.28; }
+      else if(dt < 1.75){ if(y < 0.22) y = 0.22; }
+    }
+    return y;
+  }
+  function groundY(zoneId, x, z, noDecor){
     if(zoneId==='fishing') return Island.groundY(x, z);    // ván bến gỗ cao 0.3, cát 0.04
     if(zoneId!=='plaza') return 0;
     if(Math.abs(x)<11 && z>-38.5 && z<-31.5) return 0.5;
     if(Math.abs(x)<2.5){ if(z>=-31.5 && z<-30.5) return 0.45; if(z>=-30.5 && z<-29.5) return 0.30; if(z>=-29.5 && z<-28.5) return 0.15; }
-    return 0;
+    return noDecor ? 0 : plazaDecorY(x, z);
   }
   // GChar.update đặt lại position.y mỗi khung (nhún bước đi/nhảy/ngồi) nên cộng độ cao nền SAU nó; làm mượt để leo bậc không bị giật
   function updateCharacter(charGroup, dt, time){
-    const ud = charGroup.userData, gy = groundY(curZoneId, charGroup.position.x, charGroup.position.z);
+    const ud = charGroup.userData, gy = groundY(curZoneId, charGroup.position.x, charGroup.position.z, ud.action==='sit');
     ud.gy = (ud.gy===undefined) ? gy : ud.gy + (gy-ud.gy)*Math.min(1, dt*14);
     GChar.update(charGroup, dt, time);
     charGroup.position.y += ud.gy;
@@ -1066,7 +1102,7 @@ const Scene3D = (() => {
         );
         points.push({x:p.x,z:p.z}); minY=Math.min(minY,p.y); maxY=Math.max(maxY,p.y);
       }
-      parts.push({ points:convexHull2(points), minY, maxY });
+      parts.push({ points:convexHull2(points), minY, maxY, center, ax, ay, az, hx, hy, hz });
     }
     return parts;
   }
@@ -1155,10 +1191,54 @@ const Scene3D = (() => {
       const s=zone.screen, poly=rectPoly(s.x,s.z,s.w/2,0.55,0);
       for(const p of parts) if(p.maxY>s.y&&p.minY<s.y+s.h&&polygonsOverlap(p.points,poly)) return contact('screen',s.y+s.h,s);
     }
-    // Vòng quay: cả khối (2 vành + cabin + chân khung chữ A) cao tới h+R — bay thấp hơn đỉnh vòng thì đâm vào vòng
+    // Vòng quay: kiểm tra hai vành đứng, nan, chân chống và cabin chuyển động
+    // riêng biệt; không còn coi toàn bộ khoảng trống bên dưới vành là một khối.
     if(zone.wheel){
-      const W=zone.wheel, top=W.h+W.R+0.5, poly=rectPoly(W.x,W.z,W.R+1.2,Math.max(W.fz,W.rz)+0.4,0);
-      for(const p of parts) if(p.maxY>0.1&&p.minY<top&&polygonsOverlap(p.points,poly)) return contact('wheel',top,W);
+      const W=zone.wheel, top=W.h+W.R+0.5;
+      const hitSegment=(p,x0,y0,x1,y1,z0,rad)=>{
+        const dx=x1-x0,dy=y1-y0,den=dx*dx+dy*dy||1;
+        const t=Math.max(0,Math.min(1,((p.center.x-x0)*dx+(p.center.y-y0)*dy)/den));
+        const dxy=Math.hypot(p.center.x-(x0+t*dx),p.center.y-(y0+t*dy));
+        const dzExtent=Math.abs(p.ax.z)*p.hx+Math.abs(p.ay.z)*p.hy+Math.abs(p.az.z)*p.hz;
+        const crossExtent=Math.hypot(
+          Math.abs(p.ax.x)*p.hx+Math.abs(p.ay.x)*p.hy+Math.abs(p.az.x)*p.hz,
+          Math.abs(p.ax.y)*p.hx+Math.abs(p.ay.y)*p.hy+Math.abs(p.az.y)*p.hz
+        );
+        return Math.abs(p.center.z-z0)<=dzExtent+rad && dxy<=crossExtent+rad;
+      };
+      for(const p of parts){
+        for(const side of [-1,1]){
+          const rz=W.z+side*W.rz;
+          const dzExtent=Math.abs(p.ax.z)*p.hx+Math.abs(p.ay.z)*p.hy+Math.abs(p.az.z)*p.hz;
+          if(Math.abs(p.center.z-rz)<=dzExtent+0.2){
+            const dxExtent=Math.abs(p.ax.x)*p.hx+Math.abs(p.ay.x)*p.hy+Math.abs(p.az.x)*p.hz;
+            const dyExtent=Math.abs(p.ax.y)*p.hx+Math.abs(p.ay.y)*p.hy+Math.abs(p.az.y)*p.hz;
+            const radial=Math.hypot(p.center.x-W.x,p.center.y-W.h), bound=Math.hypot(dxExtent,dyExtent);
+            if(Math.abs(radial-W.R)<=bound+0.18 || Math.abs(radial-W.R*0.5)<=bound+0.08 ||
+               hitSegment(p,W.x-W.R,W.h,W.x+W.R,W.h,rz,0.12) ||
+               hitSegment(p,W.x,W.h-W.R,W.x,W.h+W.R,rz,0.12) ||
+               hitSegment(p,W.x-W.R*0.707,W.h-W.R*0.707,W.x+W.R*0.707,W.h+W.R*0.707,rz,0.12) ||
+               hitSegment(p,W.x-W.R*0.707,W.h+W.R*0.707,W.x+W.R*0.707,W.h-W.R*0.707,rz,0.12))
+              return contact('wheel',top,W);
+          }
+        }
+        for(const side of [-1,1]){
+          for(const sign of [-1,1])
+            if(hitSegment(p,W.x,W.h,W.x+sign*W.fx,0.07,W.z+side*W.fz,0.22)) return contact('wheel',W.h,W);
+          if(hitSegment(p,W.x-W.fx,W.h*0.28,W.x+W.fx,W.h*0.28,W.z+side*W.fz,0.12))
+            return contact('wheel',W.h*0.28,W);
+        }
+      }
+      if(ferris){
+        const a0=ferris.rot.rotation.z;
+        for(let i=0;i<ferris.gond.length;i++){
+          const g=ferris.gond[i], a=Math.atan2(g.position.y,g.position.x)+a0;
+          const cx=W.x+W.R*Math.cos(a), cy=W.h+W.R*Math.sin(a), floor=cy+FERRIS_CAB.floor;
+          const poly=rectPoly(cx,W.z,1.2,0.95,0);
+          for(const p of parts) if(p.maxY>floor&&p.minY<floor+2.2&&polygonsOverlap(p.points,poly))
+            return contact('ferris-cabin',floor+2.2,W);
+        }
+      }
     }
     // Trường đua: sân vận động (2 đoạn thẳng + 2 nửa vòng) có lan can/bụi cao ~1.2; cổng đích nhô lên ~4.7 ngay vạch đích
     if(zone.race){
@@ -1175,7 +1255,25 @@ const Scene3D = (() => {
       for(const p of parts) if(p.maxY>0.05&&p.minY<0.5&&polygonsOverlap(p.points,deck)) return contact('stage',0.5,null);
       for(const sx of [-10.5,10.5]){ const spk=rectPoly(sx,-36,0.85,0.8,0); for(const p of parts) if(p.maxY>0.05&&p.minY<1.9&&polygonsOverlap(p.points,spk)) return contact('speaker',1.9,null); }
     }
-    if(zone.island && y<5 && Island.collides(x,zpos,2)) return {kind:'island'};
+    // Bãi đỗ còn các phương tiện khác trong lúc một xe đang được điều khiển.
+    for(const slot of lotSlots||[]){
+      const mesh=slot.mesh;
+      if(!mesh||!mesh.visible) continue;
+      const boxes=mesh.userData.collisionBoxes||mesh.userData.flightBoxes;
+      if(!boxes) continue;
+      const parked=planeParts(mesh.position.x,mesh.position.y,mesh.position.z,mesh.rotation.y,0,0,boxes);
+      for(const a of parts) for(const b of parked)
+        if(a.maxY>b.minY+0.02&&a.minY<b.maxY-0.02&&polygonsOverlap(a.points,b.points))
+          return contact('parked-vehicle',b.maxY,slot);
+    }
+    if(zone.island){
+      for(const p of parts){
+        const cx=p.points.reduce((s,v)=>s+v.x,0)/p.points.length, cz=p.points.reduce((s,v)=>s+v.z,0)/p.points.length;
+        const rad=Math.max(...p.points.map(v=>Math.hypot(v.x-cx,v.z-cz)));
+        const hit=Island.characterCollision(cx,p.minY,cz,rad,Math.max(0.1,p.maxY-p.minY));
+        if(hit) return {kind:'island',object:hit};
+      }
+    }
     return null;
   }
   function roofLandingAltitude(zoneId,x,zpos,yaw,boxes){
@@ -1236,6 +1334,206 @@ const Scene3D = (() => {
     if(z.wheel && Math.abs(x-z.wheel.x)<z.wheel.fx+0.4+r && Math.abs(zpos-z.wheel.z)<z.wheel.fz+0.4+r) return true;   // chân 2 khung chữ A
     if(z.water){ const w=z.water; if(Math.abs(x-w.x)<w.w/2 && Math.abs(zpos-w.z)<w.d/2 && zpos>w.z-w.d/2+2) return true; }
     return false;
+  }
+  const verticalOverlap=(y,h,lo,hi)=>y<hi-0.02&&y+h>lo+0.02;
+  function circleRectHit(x,z,r,cx,cz,hx,hz,ry=0){
+    const dx=x-cx,dz=z-cz,c=Math.cos(ry),s=Math.sin(ry),lx=dx*c-dz*s,lz=dx*s+dz*c;
+    const qx=Math.max(-hx,Math.min(hx,lx)),qz=Math.max(-hz,Math.min(hz,lz));
+    return Math.hypot(lx-qx,lz-qz)<r;
+  }
+  function circleInsideRect(x,z,r,cx,cz,hx,hz,ry=0){
+    const dx=x-cx,dz=z-cz,c=Math.cos(ry),s=Math.sin(ry),lx=dx*c-dz*s,lz=dx*s+dz*c;
+    return Math.abs(lx)+r<=hx&&Math.abs(lz)+r<=hz;
+  }
+  function pointSegmentDistance2D(px,py,ax,ay,bx,by){
+    const dx=bx-ax,dy=by-ay,den=dx*dx+dy*dy;
+    const t=den?Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/den)):0;
+    return Math.hypot(px-(ax+t*dx),py-(ay+t*dy));
+  }
+  function verticalSegmentSegmentDistance(x,y0,y1,ax,ay,bx,by){
+    const lo=Math.min(y0,y1),hi=Math.max(y0,y1),dx=bx-ax;
+    if(Math.abs(dx)>1e-8){
+      const t=(x-ax)/dx;
+      if(t>=0&&t<=1){ const y=ay+(by-ay)*t; if(y>=lo&&y<=hi) return 0; }
+    } else if(Math.abs(x-ax)<1e-8&&Math.max(lo,Math.min(ay,by))<=Math.min(hi,Math.max(ay,by))) return 0;
+    const endpointDistance=(px,py)=>Math.hypot(x-px,py<lo?lo-py:py>hi?py-hi:0);
+    return Math.min(pointSegmentDistance2D(x,lo,ax,ay,bx,by),pointSegmentDistance2D(x,hi,ax,ay,bx,by),
+      endpointDistance(ax,ay),endpointDistance(bx,by));
+  }
+  function verticalSegmentRingDistance(x,foot,top,cx,cy,radius){
+    const dx=Math.abs(x-cx),nearY=Math.max(foot,Math.min(top,cy));
+    const minR=Math.hypot(dx,nearY-cy),maxR=Math.max(Math.hypot(dx,foot-cy),Math.hypot(dx,top-cy));
+    return radius<minR?minR-radius:radius>maxR?radius-maxR:0;
+  }
+  function charVehiclePartsHit(parts,x,y,z,r,height){
+    for(const p of parts) if(verticalOverlap(y,height,p.minY,p.maxY)&&polyHitsCircle(p.points,x,z,r)) return p;
+    return null;
+  }
+  function characterCollision(zoneId,x,y,zpos,r=0.38,height=2.5,skipBench=false){
+    const zone=ZONES[zoneId]; if(!zone) return {kind:'boundary'};
+    if(zone.island) return Island.characterCollision(x,y,zpos,r,height);
+    if(Math.abs(x)>zone.size/2-r||Math.abs(zpos)>zone.size/2-r) return {kind:'boundary'};
+    if(zoneId==='plaza'&&Math.hypot(x,zpos)>53-r) return {kind:'boundary'};
+    const hitRect=(kind,cx,cz,hx,hz,ry,lo,hi,obj)=>{
+      return verticalOverlap(y,height,lo,hi)&&circleRectHit(x,zpos,r,cx,cz,hx,hz,ry)?{kind,object:obj,top:hi}:null;
+    };
+    const hitCircle=(kind,cx,cz,rad,lo,hi,obj)=>{
+      return verticalOverlap(y,height,lo,hi)&&Math.hypot(x-cx,zpos-cz)<rad+r?{kind,object:obj,top:hi}:null;
+    };
+    for(const b of zone.buildings||[]){
+      const hit=hitRect('building',b.x,b.z,b.w/2,b.d/2,b.ry||0,0.45,0.45+b.h+0.32,b);
+      if(hit) return hit;
+    }
+    for(const t of zone.trees||[]){
+      if(verticalOverlap(y,height,0,2.45)&&Math.hypot(x-t.x,zpos-t.z)<0.32+r) return {kind:'tree-trunk',object:t,top:2.45};
+      if(verticalOverlap(y,height,2.25,5.35)&&Math.hypot(x-t.x,zpos-t.z)<(t.r||1.2)*0.72+r) return {kind:'tree-crown',object:t,top:5.35};
+      // vòng đá + đất dưới gốc: đi bộ thì bước lên (groundY đã nâng nền), còn chân đang ở thấp hơn mặt vòng (vừa nhảy lên sát mép) thì bị chặn, không xuyên vào trong
+      const dtc=Math.hypot(x-t.x,zpos-t.z);
+      if(dtc<1.5&&verticalOverlap(y,height,0,0.28)) return {kind:'tree-base',object:t,top:0.28};
+      if(dtc<1.75&&verticalOverlap(y,height,0,0.22)) return {kind:'tree-base',object:t,top:0.22};
+    }
+    for(const l of zone.lamps||[]){
+      const hit=hitCircle('lamp',l.x,l.z,0.24,0,4.9,l); if(hit) return hit;
+    }
+    for(const f of zone.flowers||[]){
+      const hit=hitRect('flowerbed',f.x,f.z,BED.hw,BED.hd,0,0,1.15,f); if(hit) return hit;
+    }
+    for(const b of zone.benches||[]){
+      const ry=b.ry||0;
+      const cx=(lx,lz)=>({x:b.x+lx*Math.cos(ry)+lz*Math.sin(ry),z:b.z-lx*Math.sin(ry)+lz*Math.cos(ry)});
+      const seat=cx(0,0.05), back=cx(0,-0.22);
+      const parts=[
+        {x:seat.x,z:seat.z,hx:1.0,hz:0.275,lo:0.6,hi:0.7},     // mặt ghế
+        {x:back.x,z:back.z,hx:1.0,hz:0.05,lo:0.8,hi:0.9},      // thanh lưng dưới
+        {x:back.x,z:back.z,hx:1.0,hz:0.05,lo:1.0,hi:1.1},      // thanh lưng trên
+        ...[-0.9,0.9].flatMap(dx=>[
+          {x:b.x+dx*Math.cos(ry),z:b.z-dx*Math.sin(ry),hx:0.05,hz:0.275,lo:0.105,hi:0.655},
+          {x:b.x+dx*Math.cos(ry),z:b.z-dx*Math.sin(ry),hx:0.05,hz:0.3,lo:0.85,hi:0.95}
+        ])
+      ];
+      if(!skipBench||skipBench!==true&&skipBench!==b){
+        for(const p of parts){
+          const hit=hitRect('bench',p.x,p.z,p.hx,p.hz,ry,p.lo,p.hi,b);
+          if(hit) return hit;
+        }
+      }
+    }
+    if(zone.fountain){
+      const hit=hitCircle('fountain',zone.fountain.x,zone.fountain.z,Fountain.RADIUS,0.14,5.1,zone.fountain);
+      if(hit) return hit;
+    }
+    if(zone.screen){
+      const s=zone.screen, hit=hitRect('screen',s.x,s.z,s.w/2+0.25,0.3,0,s.y,s.y+s.h,s);
+      if(hit) return hit;
+      for(const side of [-1,1]){
+        const post=hitRect('screen-support',s.x+side*(s.w/2+1.1),s.z,0.12,0.12,0,0,13.5,s);
+        if(post) return post;
+      }
+    }
+    if(zoneId==='plaza'){
+      const ax=Math.abs(x), inOuter=ax<11.4&&zpos>-38.9&&zpos<-31.1, inInner=ax<10.6&&zpos>-38.1&&zpos<-31.9;
+      const stair=ax<2.6&&zpos>-31.9;
+      if(inOuter&&!inInner&&!stair&&y<0.5) return {kind:'stage-side',top:0.5};
+      for(const sx of [-10.5,10.5]){
+        const hit=hitRect('speaker',sx,-36,0.85,0.8,0,0,1.8,null); if(hit) return hit;
+      }
+      const race=zone.race;
+      if(race&&Math.hypot(x-race.x,Math.max(Math.abs(zpos-race.z)-race.hs,0))<race.ro+r)
+        return {kind:'race-barrier',top:Infinity};   // tường vô hình cao vô hạn: nhảy cao ~1.9 vẫn không vượt/đáp lên rào (cũ: chỉ chặn khi chân < 1.3)
+      const W=zone.wheel;
+      if(W){
+        if(ferris){
+          const a0=ferris.rot.rotation.z;
+          for(const side of [-1,1]){
+            const ringZ=W.z+side*W.rz;
+            if(Math.abs(zpos-ringZ)<=r+0.16){
+              for(const [radius,tube] of [[W.R,0.16],[W.R*0.5,0.07]]){
+                if(verticalSegmentRingDistance(x,y,y+height,W.x,W.h,radius)<=r+tube)
+                  return {kind:'ferris-rim',top:W.h+radius+tube};
+              }
+              for(let i=0;i<4;i++){
+                const a=a0+i*Math.PI/4,cx=Math.cos(a)*W.R,cy=Math.sin(a)*W.R;
+                if(verticalSegmentSegmentDistance(x,y,y+height,W.x-cx,W.h-cy,W.x+cx,W.h+cy)<=r+0.045)
+                  return {kind:'ferris-spoke',top:W.h+Math.abs(cy)+0.045};
+              }
+            }
+          }
+          const hubY=Math.max(y,Math.min(y+height,W.h));
+          if(Math.abs(zpos-W.z)<W.rz+0.15+r&&Math.hypot(x-W.x,hubY-W.h)<0.75+r)
+            return {kind:'ferris-hub',top:W.h+0.75};
+          const axleY=Math.max(y,Math.min(y+height,W.h));
+          if(Math.abs(zpos-W.z)<W.rz+0.45+r&&Math.hypot(x-W.x,axleY-W.h)<0.26+r)
+            return {kind:'ferris-axle',top:W.h+0.26};
+        }
+        for(const side of [-1,1]){
+          const sx=W.x+side*W.fx, sz=W.z+side*W.fz;
+          if(verticalOverlap(y,height,0,0.18)&&circleRectHit(x,zpos,r,sx,sz,0.4,0.4,0)) return {kind:'ferris-foot',top:0.18};
+          const sampleY=Math.max(0,Math.min(W.h,y+Math.min(height,2.2)*0.5));
+          const legX=W.x+side*W.fx*(1-sampleY/W.h);
+          if(verticalOverlap(y,height,0,W.h)&&Math.hypot(x-legX,zpos-sz)<r+0.24) return {kind:'ferris-leg',top:W.h};
+        }
+        if(ferris){
+          const a0=ferris.rot.rotation.z;
+          for(let i=0;i<ferris.gond.length;i++){
+            const g=ferris.gond[i], a=Math.atan2(g.position.y,g.position.x)+a0;
+            const cx=W.x+W.R*Math.cos(a), cy=W.h+W.R*Math.sin(a), floor=cy+FERRIS_CAB.floor;
+            if(verticalOverlap(y,height,floor,floor+2.15)&&circleRectHit(x,zpos,r,cx,W.z,1.05,0.72,0))
+              return {kind:'ferris-cabin',object:i,top:floor+2.15};
+          }
+        }
+      }
+      if(zone.water){
+        const w=zone.water;
+        if(y<0.4&&Math.abs(x-w.x)<w.w/2-r&&Math.abs(zpos-w.z)<w.d/2-r&&zpos>w.z-w.d/2+2)
+          return {kind:'water-edge'};
+      }
+      // Parked cars and aircraft use the same compound boxes as their models.
+      for(const slot of lotSlots||[]){
+        const mesh=slot.mesh;
+        if(!mesh||!mesh.visible) continue;
+        const boxes=mesh.userData.collisionBoxes||mesh.userData.flightBoxes;
+        if(!boxes) continue;
+        const parts=planeParts(mesh.position.x,mesh.position.y,mesh.position.z,mesh.rotation.y,0,0,boxes);
+        const part=charVehiclePartsHit(parts,x,y,zpos,r,height);
+        if(part) return {kind:'parked-vehicle',object:slot,top:part.maxY};
+      }
+    }
+    return null;
+  }
+  function characterFloor(zoneId,x,zpos,r=0.38,maxY=Infinity){
+    let best=groundY(zoneId,x,zpos);
+    const add=(top,inside)=>{if(inside&&top<=maxY+0.04&&top>best)best=top;};
+    const zone=ZONES[zoneId]; if(!zone) return best;
+    if(zone.island) return Island.characterFloor?Island.characterFloor(x,zpos,r,maxY):best;
+    for(const b of zone.buildings||[]){
+      const top=0.45+b.h+0.32;
+      add(top,circleInsideRect(x,zpos,r+0.06,b.x,b.z,b.w/2-0.12,b.d/2-0.12,b.ry||0));
+    }
+    for(const b of zone.benches||[])
+      add(0.7,circleInsideRect(x,zpos,0.06,b.x,b.z+0.05,0.94,0.215,b.ry||0));
+    for(const f of zone.flowers||[])
+      add(1.15,circleInsideRect(x,zpos,r,f.x,f.z,BED.hw-0.08,BED.hd-0.08,0));
+    for(const slot of lotSlots||[]){
+      const mesh=slot.mesh;
+      if(!mesh||!mesh.visible) continue;
+      const boxes=mesh.userData.collisionBoxes||mesh.userData.flightBoxes;
+      if(!boxes) continue;
+      const yaw=mesh.rotation.y,c=Math.cos(yaw),s=Math.sin(yaw);
+      for(const b of boxes){
+        const cx=mesh.position.x+b.x*c+b.z*s, cz=mesh.position.z-b.x*s+b.z*c;
+        const top=mesh.position.y+b.y+b.h/2;
+        add(top,circleInsideRect(x,zpos,r,cx,cz,b.w/2-0.04,b.d/2-0.04,yaw));
+      }
+    }
+    if(zone.wheel&&ferris){
+      const W=zone.wheel,a0=ferris.rot.rotation.z;
+      for(let i=0;i<ferris.gond.length;i++){
+        const g=ferris.gond[i],a=Math.atan2(g.position.y,g.position.x)+a0;
+        const cx=W.x+W.R*Math.cos(a),cy=W.h+W.R*Math.sin(a),top=cy+FERRIS_CAB.floor;
+        add(top,circleInsideRect(x,zpos,r,cx,W.z,0.98,0.62,0));
+      }
+    }
+    return best;
   }
   function atPortal(zoneId, x, z){
     const p = ZONES[zoneId].portal; if(!p) return null;
@@ -1313,6 +1611,7 @@ const Scene3D = (() => {
     const t=Math.max(0, Math.min(1, ((cx-a[0])*dx + (cy-a[1])*dy) / ((dx*dx + dy*dy) || 1)));
     return Math.hypot(cx-(a[0]+dx*t), cy-(a[1]+dy*t)) < 80;
   }
+  function setTvHole(on){ if(tvHole) tvHole.visible = !!on; }   // bật khi iframe YouTube đang hiện (park.js gọi mỗi khung hình)
   function setScreenText(a, b){
     if(!screenCanvas) return;
     const g = screenCanvas.getContext('2d'), gr = g.createLinearGradient(0,0,1280,720);
@@ -1380,7 +1679,7 @@ const Scene3D = (() => {
   }
 
   return { init, buildZone, createCharacter, setChatBubble, updateCharacter,
-    updateCamera, getMoveDir, collides, aircraftCollision, roofLandingAltitude, atPortal, nearBuilding, atDock, render, nearSpot, pickBench, nearBench, setTapHandler, setScreenText, screenCorners2D, setRacers, setRaceBoard, getLotSlots, setLotTaken, setLotBadgeVisible, lotText,
+    updateCamera, getMoveDir, collides, characterCollision, characterFloor, aircraftCollision, roofLandingAltitude, atPortal, nearBuilding, atDock, render, nearSpot, pickBench, nearBench, setTapHandler, setScreenText, setTvHole, screenCorners2D, setRacers, setRaceBoard, getLotSlots, setLotTaken, setLotBadgeVisible, lotText,
     getZone, groundY, CHAR_DEFS,
     // ngày / đêm (tự chạy theo giờ thiết bị)
     setNight, followClock, isNight, get night(){ return DN.k; }, get nightTarget(){ return DN.target; },

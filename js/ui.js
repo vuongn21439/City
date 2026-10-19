@@ -167,6 +167,21 @@ const UI = (() => {
     $('btnChat').onclick = ()=> togglePanel('chatPanel');
     $('btnInventory').onclick = ()=> { togglePanel('inventoryPanel'); renderInventory(callbacks.getPlayer()); };
     $('btnPlayers').onclick = ()=> { togglePanel('playersPanel'); callbacks.refreshPlayers(); };
+    // ẩn/hiện cột nút bên phải (nhớ lựa chọn)
+    (function(){
+      const bar = document.querySelector('.hud-bottom'), tg = $('btnHudToggle');
+      if(!bar || !tg) return;
+      const KEY = 'gcity_hud_hidden';
+      let hide = false; try{ hide = localStorage.getItem(KEY)==='1'; }catch(e){}
+      const apply = ()=>{
+        bar.classList.toggle('collapsed', hide);
+        tg.textContent = hide ? '‹' : '›';
+        tg.title = hide ? 'Hiện nút' : 'Ẩn nút';
+        tg.setAttribute('aria-expanded', String(!hide));
+      };
+      tg.onclick = ()=>{ hide = !hide; apply(); try{ localStorage.setItem(KEY, hide?'1':'0'); }catch(e){} };
+      apply();
+    })();
 
     // chat
     $('chatSend').onclick = sendChat;
@@ -206,6 +221,11 @@ const UI = (() => {
 
   // Cần đang cầm: 0 = chưa cầm, 1 = cần thường, 2 = cần cao cấp
   const heldRod = inv => { const t = (inv && inv.equippedRod)|0; return (t===2 && inv.rod>=2) ? 2 : (t===1 ? 1 : 0); };
+  // "Giun ×4" hoặc "Chưa chọn" — mồi đang dùng (loại đã chọn trong Balo)
+  const baitLabel = inv => {
+    const id = inv && inv.equippedBait, b = id && Fishing.BAITS.find(x=>x.id===id);
+    return (b && (inv[id]||0) > 0) ? `${b.name} ×${fmt(inv[id])}` : 'Chưa chọn';
+  };
   const ROD_ICON = {
     1: '<svg class="rod-ic" viewBox="0 0 40 40" aria-hidden="true"><path d="M6 35 L18 21.5" stroke="#8a5a32" stroke-width="4.2" stroke-linecap="round"/><path d="M17 22.5 L33 5" stroke="#c9a06a" stroke-width="2.4" stroke-linecap="round"/><circle cx="15.5" cy="29.5" r="3.6" fill="#5b6472" stroke="#d5dbe3" stroke-width="1.2"/><path d="M33 5 Q38 15 35 26" stroke="#ece8da" stroke-width="1" fill="none"/><circle cx="35" cy="28" r="2.6" fill="#e8503c"/><circle cx="35" cy="26.6" r="1.4" fill="#fdf6e8"/></svg>',
     2: '<svg class="rod-ic" viewBox="0 0 40 40" aria-hidden="true"><path d="M6 35 L18 21.5" stroke="#d9b27c" stroke-width="4.6" stroke-linecap="round"/><path d="M5 36 L7.4 33.3" stroke="#2b2b2b" stroke-width="5" stroke-linecap="round"/><path d="M17 22.5 L34 4" stroke="#1d2230" stroke-width="2.6" stroke-linecap="round"/><circle cx="21" cy="18.4" r="1.7" fill="none" stroke="#e0b84a" stroke-width="1"/><circle cx="26" cy="13" r="1.4" fill="none" stroke="#e0b84a" stroke-width="1"/><circle cx="30.4" cy="8.2" r="1.1" fill="none" stroke="#e0b84a" stroke-width="1"/><circle cx="15.5" cy="29.8" r="4.6" fill="#c9ced6" stroke="#e0b84a" stroke-width="1.6"/><circle cx="15.5" cy="29.8" r="1.6" fill="#e0b84a"/><path d="M34 4 Q39 15 36 25" stroke="#ece8da" stroke-width="1" fill="none"/><ellipse cx="36" cy="28" rx="2" ry="3.4" fill="#e8503c"/><ellipse cx="36" cy="25.6" rx="2" ry="2" fill="#ffc83d"/></svg>'
@@ -219,7 +239,8 @@ const UI = (() => {
     const fishState = typeof Fishing !== 'undefined' ? Fishing.getState().state : 'idle';
     const equipped = heldRod(inv);
     const rodName = equipped ? Fishing.RODS[equipped].name : 'Chưa cầm cần';
-    const baitTotal = (inv.worm||0) + (inv.shrimp||0) + (inv.lure||0);
+    const baitId = Fishing.usableBait(player);
+    const bait = baitId ? Fishing.BAITS.find(b=>b.id===baitId) : null;
     const fishCount = inv.fish||0;
     const view = $('fishView');
     document.querySelectorAll('.fish-tab').forEach(button=>{
@@ -231,10 +252,9 @@ const UI = (() => {
     if(fishPanelTab==='shop'){
       const baitCards = Fishing.BAITS.map(bait=>`
         <article class="bait-card">
-          <div class="bait-icon">${bait.icon}</div>
+          <div class="bait-icon">${BaitArt.svg(bait.id,'bait-art')}</div>
           <div class="bait-details">
             <div class="bait-title"><b>${bait.name}</b><span>${fmt(inv[bait.id]||0)} trong túi</span></div>
-            <p>${bait.note}</p>
             <small>Thu hút: ${bait.attracts}</small>
           </div>
           <button class="bait-buy" type="button" data-fish-action="buyBait" data-bait="${bait.id}">
@@ -250,40 +270,44 @@ const UI = (() => {
           <div class="premium-rod-copy"><b>Cần câu cao cấp</b><p>${Fishing.RODS[2].durability} · quăng xa hơn và tăng cơ hội gặp cá hiếm.</p><small>Mua một lần · ${Fishing.RODS[2].price} xu</small></div>
           <button class="rod-buy" type="button" data-fish-action="buyRod" ${ownsPremium?'disabled':''}>${ownsPremium?'Đã sở hữu':'Mua cần'}</button>
         </article>
-        ${ownsPremium?'<p class="fish-hint">Mở Balo trên đảo để chọn cần đang trang bị.</p>':''}`;
+        <p class="fish-hint">Mua xong, mở Balo để cầm cần và chọn mồi.</p>`;
     } else if(fishPanelTab==='codex'){
       const dex = inv.fishDex || {};
+      const TIER_CLASS = { 'Phổ biến':'common', 'Ít gặp':'uncommon', 'Hiếm':'rare', 'Sử thi':'epic', 'Huyền thoại':'legend' };
+      const kinds = Fishing.FISH_TYPES.length;
+      const seen = Fishing.FISH_TYPES.filter(fish=>(dex[fish.id]||0)>0).length;
       const entries = Fishing.FISH_TYPES.map(fish=>{
         const bait = Fishing.BAITS.find(item=>item.id===fish.preferredBait);
         const caught = dex[fish.id]||0;
-        return `<article class="codex-card rarity-${fish.id}">
-          <div class="codex-icon">${fish.icon}</div>
+        // Tranh minh hoạ riêng của từng loài (js/fishart.js) — cá kéo lên ở đầu dây vẽ đúng bức này
+        return `<article class="codex-card rarity-${fish.id} tier-${TIER_CLASS[fish.rarity]||'common'}">
+          <div class="codex-icon">${FishArt.svg(fish.id,'codex-art')}</div>
           <div class="codex-copy"><div class="codex-title"><b>${fish.name}</b><span>${fish.rarity}</span></div>
             <p>${fish.description}</p><small>Mồi hợp: ${bait ? bait.name : '—'} · Giá bán: ${fmt(fish.value)} xu</small>
           </div><div class="codex-count"><b>${fmt(caught)}</b><small>${caught===1?'lần':'lần'}</small></div>
         </article>`;
       }).join('');
-      view.innerHTML = `<div class="codex-intro"><b>Sổ cá</b><span>Ghi nhận ${fmt(Fishing.FISH_TYPES.length)} loài quanh đảo.</span></div><div class="codex-list">${entries}</div>`;
+      view.innerHTML = `<div class="codex-intro"><b>Sổ cá</b><span>Đã câu ${fmt(seen)}/${fmt(kinds)} loài quanh đảo.</span></div><div class="codex-list">${entries}</div>`;
     } else {
       const actionLabel = fishState==='biting' ? 'KÉO NGAY!' :
         (fishState==='waiting' || fishState==='casting' ? 'Đang chờ cá…' :
-          (fishState==='caught' ? 'Đang thu cần…' : (equipped ? 'Quăng cần' : 'Chưa cầm cần')));
-      const castDisabled = fishState==='waiting' || fishState==='casting' || fishState==='caught' || (fishState==='idle' && !equipped);
+          (fishState==='caught' ? 'Đang thu cần…' : (!equipped ? 'Chưa cầm cần' : (!bait ? 'Chưa chọn mồi' : 'Quăng cần'))));
+      const castDisabled = fishState==='waiting' || fishState==='casting' || fishState==='caught' || (fishState==='idle' && (!equipped || !bait));
       view.innerHTML = `
         <div class="fish-hero">
           <div class="fish-hero-water"><span class="fish-ripple ripple-one"></span><span class="fish-ripple ripple-two"></span><span class="fish-hero-float">🎣</span></div>
-          <div class="fish-hero-copy"><span class="fish-eyebrow">SẴN SÀNG RA KHƠI?</span><b>Chờ phao rung rồi kéo cá lên.</b><small>Mồi sẽ được trừ khi phao chạm mặt nước.</small></div>
+          <div class="fish-hero-copy"><span class="fish-eyebrow">SẴN SÀNG RA KHƠI?</span><b>Chờ phao rung rồi kéo cá lên.</b></div>
         </div>
         <div class="fish-stat-grid">
           <div class="fish-stat"><span>🎣</span><small>Cần đang cầm</small><b id="fishRodValue">${rodName}</b></div>
-          <div class="fish-stat"><span>🪱</span><small>Mồi trong túi</small><b id="fishBaitValue">${fmt(baitTotal)}</b></div>
+          <div class="fish-stat"><span>${BaitArt.svg(baitId||'worm', 'stat-bait' + (bait?'':' dim'))}</span><small>Mồi đang dùng</small><b id="fishBaitValue">${baitLabel(inv)}</b></div>
           <div class="fish-stat"><span>🐟</span><small>Cá trong túi</small><b id="fishCountValue">${fmt(fishCount)}</b></div>
         </div>
         <div class="fish-main-actions">
           <button class="fish-cast-action ${fishState==='biting'?'is-biting':''}" type="button" data-fish-action="fishCast" ${castDisabled?'disabled':''}><span>🎣</span>${actionLabel}</button>
           <button class="fish-sell-action" type="button" data-fish-action="fishSell" ${fishCount?'':'disabled'}>Bán cá đã câu</button>
         </div>
-        <p class="fish-hint">${equipped ? 'Mồi khác nhau sẽ thu hút nhóm cá khác nhau. Xem <button type="button" data-fish-tab="codex">Sổ cá</button> để chọn mồi phù hợp.' : 'Mở Balo, chọn cần câu để trang bị rồi mới quăng cần.'}</p>`;
+        <p class="fish-hint">${equipped ? (bait ? 'Mồi khác nhau thu hút loại cá khác nhau. Xem <button type="button" data-fish-tab="codex">Sổ cá</button> để chọn mồi hợp.' : 'Mở Balo và chọn mồi để bắt đầu câu.') : 'Mở Balo, cầm cần câu và chọn mồi rồi mới quăng cần.'}</p>`;
     }
   }
   function openFishingPanel(tab){
@@ -363,9 +387,6 @@ const UI = (() => {
     const items = [
       { icon:'🪙', name:'Xu', count:fmt(p.coins) },
       { icon:'🐟', name:'Cá', count:p.inventory.fish },
-      { icon:'🪱', name:'Giun', count:p.inventory.worm },
-      { icon:'🦐', name:'Tép', count:p.inventory.shrimp },
-      { icon:'✨', name:'Mồi giả', count:p.inventory.lure },
     ];
     items.forEach(it=>{
       const slot = document.createElement('div');
@@ -389,9 +410,26 @@ const UI = (() => {
       button.onclick = ()=> onAction('equipRod', { tier });
       c.appendChild(button);
     });
+    // Mồi: chọn loại mồi để dùng với cần đang cầm (cần nào cũng được). Chưa cầm cần thì chưa chọn được.
+    const usingBait = Fishing.usableBait(p);
+    const bhead = document.createElement('p');
+    bhead.className = 'inv-section';
+    bhead.textContent = 'Mồi câu';
+    c.appendChild(bhead);
+    Fishing.BAITS.forEach(b=>{
+      const n = p.inventory[b.id]||0, on = usingBait===b.id;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'inv-slot inv-rod-slot inv-bait-slot' + (on ? ' equipped' : '') + ((equipped && n>0) || on ? '' : ' locked');
+      button.innerHTML = `${BaitArt.svg(b.id,'bait-ic')}<span class="inv-name">${b.name}</span><span class="inv-qty">${fmt(n)}</span><span class="inv-count">${on ? 'Đang dùng' : (n<=0 ? 'Hết' : (equipped ? 'Chọn' : '—'))}</span>`;
+      button.setAttribute('aria-label', (on ? 'Đang dùng ' : 'Dùng ') + b.name);
+      button.onclick = ()=> onAction('equipBait', { bait:b.id });
+      c.appendChild(button);
+    });
     const note = document.createElement('p');
     note.className = 'inventory-note';
-    note.textContent = onIsland ? (equipped ? 'Bấm cần đang cầm để cất.' : 'Chọn một cần câu để trang bị.') : 'Chỉ trang bị cần câu tại Đảo Câu Cá.';
+    note.textContent = !onIsland ? 'Chỉ cầm cần và chọn mồi tại Đảo Câu Cá.' :
+      (!equipped ? 'Chọn một cần câu để cầm.' : (!usingBait ? 'Chọn loại mồi để bắt đầu câu.' : 'Đã sẵn sàng. Bấm nút 🎣 để quăng cần.'));
     c.appendChild(note);
   }
 
@@ -416,7 +454,7 @@ const UI = (() => {
     $('hudZone').textContent = (Scene3D.getZone(p.zone)||{}).name || '';
     const fishCount = $('fishCountValue'); if(fishCount) fishCount.textContent = fmt(p.inventory.fish||0);
     const baitCount = $('fishBaitValue');
-    if(baitCount) baitCount.textContent = fmt((p.inventory.worm||0)+(p.inventory.shrimp||0)+(p.inventory.lure||0));
+    if(baitCount) baitCount.textContent = baitLabel(p.inventory);
     const rodValue = $('fishRodValue');
     const equipped = heldRod(p.inventory);
     if(rodValue) rodValue.textContent = equipped ? Fishing.RODS[equipped].name : 'Chưa cầm cần';
@@ -434,29 +472,35 @@ const UI = (() => {
   // ---- Joystick ----
   function initJoystick(onMove){
     const joy = $('joystick'), knob = $('joystickKnob');
-    let active=false, cx=0, cy=0;
+    let activeId=null, cx=0, cy=0;
     const R = 33;
     function start(e){
-      active=true;
+      if(activeId!==null) return;
+      e.preventDefault();
+      activeId=e.pointerId;
       const r = joy.getBoundingClientRect();
       cx = r.left + r.width/2; cy = r.top + r.height/2;
     }
     function move(e){
-      if(!active) return;
-      const t = e.touches? e.touches[0] : e;
-      let dx = t.clientX - cx, dy = t.clientY - cy;
+      if(activeId===null||e.pointerId!==activeId) return;
+      let dx = e.clientX - cx, dy = e.clientY - cy;
       const d = Math.hypot(dx,dy);
       if(d>R){ dx=dx/d*R; dy=dy/d*R; }
       knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
       onMove({ x: dx/R, y: dy/R });
     }
-    function end(){ active=false; knob.style.transform='translate(-50%,-50%)'; onMove({x:0,y:0}); }
-    joy.addEventListener('touchstart', start);
-    joy.addEventListener('touchmove', e=>{ e.preventDefault(); move(e); }, {passive:false});
-    joy.addEventListener('touchend', end);
-    joy.addEventListener('mousedown', start);
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', end);
+    function end(e){
+      if(activeId===null||e&&e.pointerId!==activeId) return;
+      activeId=null; knob.style.transform='translate(-50%,-50%)'; onMove({x:0,y:0});
+    }
+    joy.addEventListener('pointerdown',e=>{
+      start(e);
+      if(activeId===e.pointerId) try{ joy.setPointerCapture(e.pointerId); }catch(_){}
+    });
+    joy.addEventListener('pointermove',move);
+    joy.addEventListener('lostpointercapture',end);
+    window.addEventListener('pointerup',end);
+    window.addEventListener('pointercancel',end);
   }
 
   return { setLoading, hideLoading, initCharSelect, openCharSwitch, closeCharSwitch, showCharSelect, hideCharSelect,

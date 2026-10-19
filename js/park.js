@@ -275,7 +275,7 @@ const Park = (() => {
     searchVideos(v);
   }
   function stopVideo(){
-    videoId = null; frame.src = 'about:blank'; frame.style.visibility = 'hidden';
+    videoId = null; frame.src = 'about:blank'; frame.style.visibility = 'hidden'; Scene3D.setTvHole(false);
     Scene3D.setScreenText('GCITY TV', 'Chọn video tại quầy 📺 cạnh sân khấu');
   }
 
@@ -317,8 +317,8 @@ const Park = (() => {
     }
     const pts = (zone === 'plaza' && videoId) ? Scene3D.screenCorners2D() : null;
     const w = pts ? Math.hypot(pts[1][0]-pts[0][0], pts[1][1]-pts[0][1]) : 0;
-    if(!pts || w < 80){ frame.style.visibility = 'hidden'; return; }
-    frame.style.visibility = 'visible';
+    if(!pts || w < 80){ frame.style.visibility = 'hidden'; Scene3D.setTvHole(false); return; }
+    frame.style.visibility = 'visible'; Scene3D.setTvHole(true);   // iframe nằm dưới canvas; lỗ trên canvas cho nó lộ ra, vật thể đứng trước TV che được
     frame.style.transform = matrix3d(pts);
   }
 

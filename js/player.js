@@ -27,7 +27,7 @@ const Player = (() => {
       speed: GCITY_CONFIG.GAME.moveSpeed,
       chatBubble: null, chatT: 0,
       coins: GCITY_CONFIG.GAME.startCoins,
-      inventory: { worm:10, shrimp:0, lure:0, fish:0, fishValue:0, fishDex:{}, rod:1, equippedRod:0 },
+      inventory: { worm:10, shrimp:0, minnow:0, fish:0, fishValue:0, fishDex:{}, rod:1, equippedRod:0, equippedBait:null },
       zone: 'plaza'
     };
   }

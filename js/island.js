@@ -65,6 +65,69 @@ const Island = (() => {
     for(let i=0;i<OBST.length;i++){ const o = OBST[i]; if(Math.hypot(x-o.x, z-o.z) < o.r + r*0.6) return true; }
     return false;
   }
+  // A grounded footprint is a capsule, not a point on the map. Test its
+  // vertical span against the visible island props so a jump can clear low
+  // objects without allowing the player to walk through tall palms or huts.
+  function characterCollision(x, footY, z, r=0.38, height=2.5){
+    if(!(inIsland(x,z,r*0.8+0.2) || onPier(x,z,r*0.6))) return {kind:'shore'};
+    const overlapsY=(lo,hi)=>footY < hi-0.02 && footY+height > lo+0.02;
+    const rectHit=(cx,cz,hx,hz,ry=0)=>{
+      const dx=x-cx,dz=z-cz,c=Math.cos(ry),s=Math.sin(ry),lx=dx*c-dz*s,lz=dx*s+dz*c;
+      const qx=Math.max(-hx,Math.min(hx,lx)),qz=Math.max(-hz,Math.min(hz,lz));
+      return Math.hypot(lx-qx,lz-qz)<r;
+    };
+    const cylHit=(cx,cz,rad,lo,hi)=>overlapsY(lo,hi) && Math.hypot(x-cx,z-cz)<rad+r;
+    const sphereHit=(cx,cy,cz,rad)=>{
+      const a=footY+r, b=footY+height-r, py=Math.max(a,Math.min(b,cy));
+      return Math.hypot(x-cx,py-cy,z-cz)<rad+r;
+    };
+    const coneHit=(cx,cz,baseY,apexY,baseRadius)=>{
+      const lo=Math.max(footY,baseY),hi=Math.min(footY+height,apexY);
+      if(lo>hi) return false;
+      const radial=Math.hypot(x-cx,z-cz);
+      const minRadius=baseRadius*(apexY-hi)/(apexY-baseY);
+      const maxRadius=baseRadius*(apexY-lo)/(apexY-baseY);
+      return radial+r>=minRadius-0.04&&radial-r<=maxRadius+0.04;
+    };
+    if(overlapsY(0,4.2) && rectHit(HUT.x,HUT.z,HUT.w/2,HUT.d/2)) return {kind:'hut',top:4.2};
+    for(const p of PALMS){
+      const tx=p.x+Math.cos(p.phi)*p.lean*0.2, tz=p.z+Math.sin(p.phi)*p.lean*0.2;
+      if(cylHit(tx,tz,0.28,0,p.h+0.2)) return {kind:'palm',top:p.h+0.2};
+      if(sphereHit(p.x+Math.cos(p.phi)*p.lean*0.6,p.h,p.z+Math.sin(p.phi)*p.lean*0.6,1.55)) return {kind:'palm-crown',top:p.h+1.55};
+    }
+    for(const u of UMB){
+      if(cylHit(u.x,u.z,0.10,0,3.0)) return {kind:'umbrella-pole',top:3.0};
+      if(coneHit(u.x,u.z,2.3,3.0,2.0)) return {kind:'umbrella-canopy'};
+      const cx=u.x+0.9,cz=u.z+1.5;
+      if(overlapsY(0.33,0.43)&&rectHit(cx,cz,0.45,0.725,0.15)) return {kind:'lounge-seat',top:0.43};
+      if(overlapsY(0.03,0.37)){
+        for(const sx of [-0.4,0.4]) for(const sz of [-0.6,0.6])
+          if(rectHit(cx+sx,cz+sz,0.04,0.04)) return {kind:'lounge-leg',top:0.37};
+      }
+      // Back pad is tilted in the model; use its rotated horizontal footprint
+      // and actual projected vertical range instead of a large umbrella-sized box.
+      if(overlapsY(0.36,1.14)&&rectHit(cx+0.08,cz+0.88,0.45,0.32,0.15)) return {kind:'lounge-back',top:1.14};
+    }
+    for(const [lx,lz] of LANT) if(cylHit(lx,lz,0.2,0,4.8)) return {kind:'lantern',top:4.8};
+    for(const b of BUSH) if(cylHit(b.x,b.z,b.r*0.72,0,1.8)) return {kind:'bush',top:1.8};
+    for(const rock of ROCKS) if(sphereHit(rock[0],0.12,rock[1],rock[2]*0.8)) return {kind:'rock',top:0.12+rock[2]*0.8};
+    return null;
+  }
+  function characterFloor(x,z,r=0.38,maxY=Infinity){
+    let best=groundY(x,z);
+    for(const u of UMB){
+      const cx=u.x+0.9,cz=u.z+1.5,ry=0.15,seatTop=0.43;
+      if(seatTop>maxY+0.04) continue;
+      const c=Math.cos(ry),s=Math.sin(ry),dx=x-cx,dz=z-cz;
+      const lx=dx*c-dz*s,lz=dx*s+dz*c;
+      if(Math.abs(lx)>0.39||Math.abs(lz)>0.665) continue; // top of the visible chaise seat
+      const bx=cx+0.08,bz=cz+0.88,bdx=x-bx,bdz=z-bz,blx=bdx*c-bdz*s,blz=bdx*s+bdz*c;
+      const qx=Math.max(Math.abs(blx)-0.45,0),qz=Math.max(Math.abs(blz)-0.32,0);
+      if(Math.hypot(qx,qz)<r) continue;                  // do not stand through the tilted back pad
+      if(seatTop>best) best=seatTop;
+    }
+    return best;
+  }
   function atDock(x,z){
     if(onPier(x,z,-0.3)) return true;
     const th = Math.atan2(z,x); return Math.hypot(x,z) > R(th) - 3.4;
@@ -333,5 +396,5 @@ const Island = (() => {
     LANT.forEach(l => env.addLamp(l[0], l[1], 0.5, TOP));
   }
 
-  return { build, collides, atDock, fishDir, isWater, castTarget, groundY, R, WATER_Y, PIER, HUT, spawn:{ x:2.6, z:-5 } };
+  return { build, collides, characterCollision, characterFloor, atDock, fishDir, isWater, castTarget, groundY, R, WATER_Y, PIER, HUT, spawn:{ x:2.6, z:-5 } };
 })();

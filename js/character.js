@@ -477,7 +477,6 @@ const GChar = (() => {
   };
   const T_RELEASE = 0.52;     // giây kể từ lúc vào pose 'cast': buông dây
   const T_REEL = 1.1;         // giây: kéo phao (+cá) từ mặt nước lên đầu cần
-  const FISH_COL = { carp:0xaab4bf, tilapia:0xf0862f, bass:0x5b8a2e, golden:0xf7c62b };
   const CAST_KEYS = [         // [t, armR.x, foreR.x, armR.z, ngả thân]
     [0.00, -0.48, -0.02, -0.40,  0.00],   // nghỉ
     [0.35, -1.75, -0.35, -0.55, -0.10],   // giương cần lên cao, ngả người ra sau
@@ -547,13 +546,11 @@ const GChar = (() => {
     });
     const lineMat = new THREE.MeshBasicMaterial({ color:0xf2efe2, transparent:true, opacity:0.85 });
     p.line = [0, 1, 2, 3].map(() => { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 1, 4), lineMat); m.visible = false; g.add(m); return m; });
-    // cá treo cuối dây khi kéo lên
-    p.fishMat = new THREE.MeshBasicMaterial({ color:0xf0862f });
-    const fish = T();
-    const fb = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), p.fishMat); fb.scale.set(0.5, 0.62, 1.25); fish.add(fb);
-    const ft = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.24, 6), p.fishMat); ft.rotation.x = PI/2; ft.position.z = -0.32; ft.scale.set(0.35, 1, 1); fish.add(ft);
-    [-1, 1].forEach(s => sph(fish, 0.035, 0x111111, s*0.1, 0.06, 0.26, 1, 1, 1, 6));
-    fish.visible = false; g.add(fish); p.rodFish = fish;
+    // cá treo cuối dây khi kéo lên: Sprite luôn quay mặt về camera, vẽ ĐÚNG bức tranh của loài đó trong Sổ cá (js/fishart.js).
+    // Mỗi lần kéo cá chỉ đổi map theo ud.fishId (game.js đặt khi 'caught'); texture dùng chung cho mọi nhân vật.
+    p.fishMat = new THREE.SpriteMaterial({ map:FishArt.texture('carp'), transparent:true, depthWrite:false, fog:false, toneMapped:false });
+    const fish = new THREE.Sprite(p.fishMat); fish.renderOrder = 4; fish.visible = false; g.add(fish); p.rodFish = fish;
+    FishArt.preload();
     // gợn nước: [0] bắn nước lúc phao chạm · [1] gợn đều khi chờ / cá đớp
     p.rings = [0, 1].map(() => {
       const m = new THREE.Mesh(new THREE.RingGeometry(0.86, 1, 28), new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0, depthWrite:false, side:THREE.DoubleSide }));
@@ -653,9 +650,12 @@ const GChar = (() => {
     const showFish = a === 'reel' && F.y > wy + 0.12;
     p.rodFish.visible = showFish;
     if(showFish){
-      p.fishMat.color.setHex(FISH_COL[ud.fishId] || 0xf0862f);
-      _loc.set(F.x, F.y - 0.42, F.z); g.worldToLocal(_loc); p.rodFish.position.copy(_loc);
-      p.rodFish.rotation.set(-PI/2, Math.sin(time*14)*0.5, 0);
+      const fid = FishArt.has(ud.fishId) ? ud.fishId : 'carp', tex = FishArt.texture(fid);
+      if(p.fishMat.map !== tex) p.fishMat.map = tex;
+      const fl = FishArt.len(fid), fk = 1 / g.scale.x;                    // fl = chiều dài cá theo đơn vị thế giới
+      p.rodFish.scale.set(fl*fk, fl*fk*FishArt.H/FishArt.W, 1);
+      _loc.set(F.x, F.y - 0.06 - fl*0.5, F.z); g.worldToLocal(_loc); p.rodFish.position.copy(_loc);   // cá treo bằng miệng ngay dưới phao
+      p.fishMat.rotation = PI/2 + Math.sin(time*14)*0.4;                  // tranh quay mặt sang phải → xoay 90° cho đầu hướng lên, quẫy nhẹ
     }
     // ---- gợn nước tại điểm rơi ----
     const k = 1 / g.scale.x, ring0 = p.rings[0], ring1 = p.rings[1];

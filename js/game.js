@@ -12,6 +12,8 @@
   const vInput = { fwd:false, back:false, up:false, down: false };
   const SHOW_FPS = /[?&]debug=1/.test(location.search);   // bộ đếm FPS chỉ dành cho dev (thêm ?debug=1 vào URL)
   const _fseat = new THREE.Vector3(), _seatOffset = new THREE.Vector3();
+  const PLAYER_RADIUS=0.38, PLAYER_HEIGHT=2.5, STEP_HEIGHT=0.34, JUMP_SPEED=8.8, GRAVITY=20;
+  let verticalState={ floor:0, height:0, velocity:0, grounded:true };
   // ===== Lưu dữ liệu người chơi =====
   // localStorage là chính (đủ: tên, giới tính, nhân vật, xu, túi đồ). Cookie giữ bản rút gọn (tên/giới tính/nhân vật/xu) để dự phòng
   // khi localStorage bị chặn/xoá. Dữ liệu gắn với TÊN MIỀN: đổi domain (www ↔ không www, http ↔ https, localhost ↔ 127.0.0.1) là coi như máy mới.
@@ -50,6 +52,79 @@
   let currentZone = 'plaza';
 
   function $(id){ return document.getElementById(id); }
+  function resetVerticalState(zoneId,x,z){
+    const foot=playerMesh?.position.y||0;
+    const floor=Scene3D.characterFloor(zoneId,x,z,PLAYER_RADIUS,foot+0.08);
+    verticalState={ floor, height:0, velocity:0, grounded:true };
+  }
+  function startCharacterJump(){
+    if(!playerMesh||riding||ferrisRide>=0||Player.isSeated(playerMesh.userData.action)||!verticalState.grounded) return false;
+    verticalState.floor=Scene3D.characterFloor(currentZone,playerMesh.position.x,playerMesh.position.z,PLAYER_RADIUS,verticalState.floor+STEP_HEIGHT);
+    verticalState.height=0; verticalState.velocity=JUMP_SPEED; verticalState.grounded=false;
+    return true;
+  }
+  function jumpCharacter(){
+    if(!startCharacterJump()) return false;   // không nhảy được (đang trên xe / ngồi / đang ở trên không) → im lặng, không hiện thông báo
+    Player.doAction(player,'jump');
+    playerMesh.userData.action=player.action; playerMesh.userData.actionT=0;
+    try{ Net.sendMyState({x:player.x,y:player.y,action:player.action}); }catch(e){}
+    return true;
+  }
+  function tryMoveCharacter(dx,dz,skipBench=false){
+    const p=playerMesh.position,nx=p.x+dx,nz=p.z+dz;
+    let floor=verticalState.floor,height=verticalState.height;
+    if(verticalState.grounded){
+      const nextFloor=Scene3D.characterFloor(currentZone,nx,nz,PLAYER_RADIUS,verticalState.floor+STEP_HEIGHT);
+      const delta=nextFloor-floor;
+      if(delta>STEP_HEIGHT) return false;
+      if(delta< -STEP_HEIGHT){
+        height=Math.max(0,floor+height-nextFloor);
+        floor=nextFloor; verticalState.grounded=false; verticalState.velocity=0;
+      } else floor=nextFloor;
+    }
+    if(Scene3D.characterCollision(currentZone,nx,floor+height,nz,PLAYER_RADIUS,PLAYER_HEIGHT,skipBench)) return false;
+    verticalState.floor=floor; verticalState.height=height;
+    p.x=nx; p.z=nz;
+    return true;
+  }
+  function updateVerticalPhysics(dt){
+    if(verticalState.grounded||!playerMesh) return;
+    const oldHeight=verticalState.height,oldFoot=verticalState.floor+oldHeight;
+    verticalState.velocity-=GRAVITY*dt;
+    verticalState.height+=verticalState.velocity*dt;
+    const nextFoot=verticalState.floor+verticalState.height;
+    if(verticalState.velocity>0&&Scene3D.characterCollision(currentZone,playerMesh.position.x,nextFoot,playerMesh.position.z,PLAYER_RADIUS,PLAYER_HEIGHT)){
+      verticalState.height=oldHeight; verticalState.velocity=0; return;
+    }
+    const surface=Scene3D.characterFloor(currentZone,playerMesh.position.x,playerMesh.position.z,PLAYER_RADIUS,oldFoot+0.05);
+    if(verticalState.velocity<=0&&nextFoot<=surface+0.02&&oldFoot>=surface-0.08){
+      verticalState.floor=surface; verticalState.height=0; verticalState.velocity=0; verticalState.grounded=true;
+      if(playerMesh.userData.action==='jump'){
+        playerMesh.userData.action=null; player.action=null;
+        try{ Net.sendMyState({x:player.x,y:player.y,action:null}); }catch(e){}
+      }
+    } else if(verticalState.height<=0){
+      verticalState.floor=Scene3D.groundY(currentZone,playerMesh.position.x,playerMesh.position.z);
+      verticalState.height=0; verticalState.velocity=0; verticalState.grounded=true;
+      if(playerMesh.userData.action==='jump'){ playerMesh.userData.action=null; player.action=null; }
+    }
+    // Chặn xuyên qua collider khi rơi xuống: ưu tiên bề mặt va chạm gần nhất,
+    // kể cả các phần không được khai báo riêng trong characterFloor().
+    if(!verticalState.grounded&&verticalState.velocity<=0){
+      const hit=Scene3D.characterCollision(currentZone,playerMesh.position.x,nextFoot,playerMesh.position.z,PLAYER_RADIUS,PLAYER_HEIGHT);
+      if(hit){
+        if(Number.isFinite(hit.top)&&hit.top<=oldFoot+0.08&&hit.top>=nextFoot-0.05){
+          verticalState.floor=hit.top; verticalState.height=0; verticalState.velocity=0; verticalState.grounded=true;
+          if(playerMesh.userData.action==='jump'){
+            playerMesh.userData.action=null; player.action=null;
+            try{ Net.sendMyState({x:player.x,y:player.y,action:null}); }catch(e){}
+          }
+        } else {
+          verticalState.height=oldHeight; verticalState.velocity=0;
+        }
+      }
+    }
+  }
 
   // ---- Input ----
   window.addEventListener('keydown', e=>{
@@ -61,6 +136,11 @@
       return;
     }
     if(typing) return; // đang gõ chat/link thì đừng điều khiển nhân vật
+    if(e.code==='Space'&&!riding){
+      e.preventDefault();
+      if(!e.repeat) jumpCharacter();
+      return;
+    }
     if(riding && e.code==='Space') e.preventDefault();   // Space = Bay lên; không để nó bấm nhầm nút đang focus / cuộn trang
     input.keys[e.code]=true;
     if(e.code==='ShiftLeft'||e.code==='ShiftRight') input.run=true;
@@ -103,8 +183,11 @@
     const sv = charData._save;
     if(sv){
       player.coins = typeof sv.coins==='number' ? sv.coins : GCITY_CONFIG.GAME.startCoins;
-      player.inventory = Object.assign({worm:10,shrimp:0,lure:0,fish:0,fishValue:0,fishDex:{},rod:1,equippedRod:0}, sv.inventory||{});
+      player.inventory = Object.assign({worm:10,shrimp:0,minnow:0,fish:0,fishValue:0,fishDex:{},rod:1,equippedRod:0,equippedBait:null}, sv.inventory||{});
+      if(player.inventory.lure>0) player.inventory.minnow = (player.inventory.minnow||0) + player.inventory.lure;   // save cũ: "mồi giả" → "cá con"
+      delete player.inventory.lure;
       player.inventory.equippedRod = 0;   // cần câu chỉ được cầm khi người chơi tự trang bị trong Balo (ở đảo)
+      player.inventory.equippedBait = null;   // mồi cũng phải chọn lại trong Balo sau khi cầm cần
       player.inventory.fishDex = Object.assign({}, player.inventory.fishDex||{});
     }
     curChar = { name:charData.name, gender:charData.gender, charIndex:charData.charIndex };
@@ -112,6 +195,7 @@
     player.zone = 'plaza';
     playerMesh = Scene3D.createCharacter(charData.gender, charData.charIndex, charData.name, true);
     playerMesh.position.set(spawn.x, 0, spawn.z);
+    resetVerticalState(currentZone,spawn.x,spawn.z);
     Scene3D.scene.add(playerMesh);
 
     await Net.init({ id:'me', name:charData.name, gender:charData.gender, charIndex:charData.charIndex, x:spawn.x, y:spawn.z });
@@ -165,9 +249,10 @@
       onEmote: id=>{
         if(fishing) cancelFishing();
         const ud = playerMesh.userData;
+        if(id==='jump'){ jumpCharacter(); return; }
         if(id==='lotus' && ud.action==='sit'){   // đang ngồi ghế: bước ra trước ghế rồi mới ngồi xuống đất, không xuyên vào ghế
           const nx = playerMesh.position.x + Math.sin(ud.face||0)*1.3, nz = playerMesh.position.z + Math.cos(ud.face||0)*1.3;
-          if(!Scene3D.collides(currentZone, nx, nz)){ playerMesh.position.x = nx; playerMesh.position.z = nz; player.x = nx; player.y = nz; }
+          if(!Scene3D.characterCollision(currentZone,nx,verticalState.floor,nz,PLAYER_RADIUS,PLAYER_HEIGHT)){ playerMesh.position.x = nx; playerMesh.position.z = nz; player.x = nx; player.y = nz; }
         }
         Player.doAction(player, id); ud.action = player.action; ud.actionT = 0;
         try{ Net.sendMyState({ x:player.x, y:player.y, action:player.action }); }catch(e){}
@@ -177,6 +262,12 @@
       refreshPlayers: ()=> UI.renderPlayers(Net.getPlayers()),
     });
     UI.initJoystick(j=> input.joy = j);
+    if($('btnJump')){
+      // pointerdown thay vì click: trình duyệt chỉ bắn "click" cho ngón chạm ĐẦU TIÊN (primary pointer). Khi ngón này đang giữ joystick,
+      // chạm nút nhảy bằng ngón thứ hai sẽ không có click → nút "bị khoá". pointerdown thì bắn cho mọi ngón nên vừa chạy vừa nhảy được.
+      $('btnJump').addEventListener('pointerdown',e=>{ e.preventDefault(); jumpCharacter(); });
+      $('btnJump').addEventListener('click',e=>{ e.preventDefault(); if(e.detail===0) jumpCharacter(); });   // click do bàn phím (Enter/Space khi nút đang focus); chạm/chuột đã xử lý ở pointerdown
+    }
     if($('fishQuick')) $('fishQuick').onclick = fishQuickTap;
     function openCharSwitch(){
       if(riding){ UI.toast('Vui lòng xuống xe trước khi đổi nhân vật'); return; }
@@ -228,10 +319,11 @@
       npcs.forEach(n=> n.m.visible = (n.zone===id));
       const sp = Scene3D.getZone(id).spawn;
       playerMesh.position.set(sp.x, 0, sp.z);
+      resetVerticalState(id,sp.x,sp.z);
       UI.updateHUD(player);
     },
     setNight:(v, instant)=>Scene3D.setNight(!!v, !!instant),
-    move(x, z){ playerMesh.position.set(x, 0, z); },
+    move(x, z){ playerMesh.position.set(x, 0, z); resetVerticalState(currentZone,x,z); },
     cam:{ dist:d=>Scene3D.setCam(d), pitch:p=>Scene3D.setCam(0, p), angle:a=>Scene3D.setCam(0, undefined, a) },
     fish: ()=>Fishing.getState(),
     player: ()=>playerMesh,
@@ -248,8 +340,9 @@
   // ---- Actions (shop/fish/etc) ----
   function handleAction(type, data){
     if(type==='fishCast'){
-      if(currentZone==='fishing' && Fishing.getState().state==='idle' && !(player.inventory.equippedRod>0)){
-        UI.toast('Hãy mở Balo và trang bị cần câu trước.'); return;
+      if(currentZone==='fishing' && Fishing.getState().state==='idle'){
+        if(!(player.inventory.equippedRod>0)){ UI.toast('Hãy mở Balo và cầm cần câu trước.'); return; }
+        if(!Fishing.usableBait(player)){ UI.toast(Fishing.baitHint(player)); return; }   // phải tự chọn mồi trong Balo (hết mồi nào thì chọn lại)
       }
       if(currentZone!=='fishing' || !Scene3D.atDock('fishing', playerMesh.position.x, playerMesh.position.z)){
         UI.toast('Hãy đến bến câu hoặc đứng gần mép nước để quăng cần'); return;
@@ -273,8 +366,8 @@
       if(player.coins<bait.price){ UI.toast(UI.NO_COIN); return; }
       player.coins-=bait.price;
       player.inventory[bait.id]=(player.inventory[bait.id]||0)+bait.quantity;
-      UI.toast(`Đã mua ${bait.quantity} ${bait.name.toLowerCase()}`);
-      UI.updateHUD(player); UI.refreshFishingPanel(); saveNow();
+      UI.toast(`Đã mua ${bait.quantity} ${bait.name.toLowerCase()}` + (player.inventory.equippedRod>0 && !Fishing.usableBait(player) ? '. Mở Balo để chọn mồi.' : ''));
+      UI.updateHUD(player); UI.refreshFishingPanel(); UI.renderInventory(player); saveNow();
     }
     else if(type==='buyLotto'){   // Số may mắn: data = [d1,d2,d3]; trả về kết quả để Lotto chạy hiệu ứng (null = bị từ chối)
       const pick = Array.isArray(data) ? data : null;
@@ -306,6 +399,17 @@
       UI.toast('Đã mua cần cao cấp. Trang bị trong Balo.');
       UI.updateHUD(player); UI.refreshFishingPanel(); saveNow();
     }
+    else if(type==='equipBait'){
+      const bait = Fishing.BAITS.find(item=>item.id===(data && data.bait));
+      if(!bait) return;
+      if(currentZone!=='fishing' || !(player.inventory.equippedRod>0)){ UI.toast('Hãy cầm cần câu trước khi chọn mồi.'); return; }
+      if((player.inventory[bait.id]||0)<=0){ UI.toast(`Bạn đã hết ${bait.name.toLowerCase()}. Hãy mua thêm ở quầy câu cá.`); return; }
+      if(Fishing.getState().state==='casting') return;   // đang quăng: chờ phao chạm nước
+      player.inventory.equippedBait = bait.id;
+      UI.toast(`Đang dùng ${bait.name.toLowerCase()}.`);
+      UI.updateHUD(player); UI.renderInventory(player); UI.refreshFishingPanel();
+      saveNow();
+    }
     else if(type==='equipRod'){
       const tier = Number(data && data.tier);
       if(tier!==1 && tier!==2) return;
@@ -329,6 +433,7 @@
     if(fishing) return;
     const ud = playerMesh.userData, tier = player.inventory.equippedRod>0 ? (player.inventory.equippedRod===2 && player.inventory.rod>=2 ? 2 : 1) : 0;
     player.inventory.equippedRod = tier;
+    if(!tier) player.inventory.equippedBait = null;   // không cầm cần thì không có mồi đang dùng
     const canHold = tier>0 && currentZone==='fishing' && !riding && ferrisRide<0;
     if(canHold){
       if(!ud.action){
@@ -369,10 +474,11 @@
   function refreshFishQuick(){
     const b = $('fishQuick'); if(!b) return;
     const on = currentZone==='fishing' && !riding, st = Fishing.getState().state;
-    const key = on + st; if(key===_fq) return; _fq = key;
+    const needBait = on && st==='idle' && player.inventory.equippedRod>0 && !Fishing.usableBait(player);   // cầm cần nhưng chưa chọn mồi
+    const key = on + st + needBait; if(key===_fq) return; _fq = key;
     b.classList.toggle('hidden', !on);
     b.classList.toggle('bite', st==='biting'); b.classList.toggle('wait', st==='waiting' || st==='casting' || st==='caught');
-    const label = st==='biting' ? 'KÉO!' : st==='caught' ? 'Thu cá…' : (st==='waiting' || st==='casting' ? 'Chờ…' : 'Quăng');
+    const label = st==='biting' ? 'KÉO!' : st==='caught' ? 'Thu cá…' : (st==='waiting' || st==='casting' ? 'Chờ…' : (needBait ? 'Chọn mồi' : 'Quăng'));
     b.innerHTML = '<span class="fq-ic">🎣</span><span class="fq-lb">' + label + '</span>';
   }
   function fishQuickTap(){
@@ -385,11 +491,17 @@
   function onFishEvent(ev){
     if(ev.type==='casting') UI.closePanel('fishPanel');   // đóng bảng để thấy nhân vật quăng cần
     if(ev.type==='caught' && playerMesh) playerMesh.userData.fishId = ev.fish.id;   // màu cá hiện trên dây khi kéo lên
+    // Hết loại mồi đang dùng (lượt cuối đã xong) → dừng câu, người chơi tự mở Balo chọn lại hoặc mua thêm rồi chọn
+    const out = ev.type==='baitout' ? ev.bait : ev.baitOut;
+    const outBait = out && Fishing.BAITS.find(b=>b.id===out);
+    const outTxt = outBait ? `Đã hết ${outBait.name.toLowerCase()}. Mở Balo chọn mồi khác, hoặc mua thêm rồi chọn lại.` : '';
     if(ev.type==='error') UI.toast(ev.msg);
-    else if(ev.type==='waiting') UI.toast('Phao đã chạm nước. Hãy chờ cá cắn');
+    else if(ev.type==='waiting') UI.toast('Đã thả câu, chờ cá cắn…');
     else if(ev.type==='biting') UI.toast('Cá cắn câu! Hãy kéo cần ngay');
-    else if(ev.type==='caught') UI.toast(`Câu được ${ev.fish.name}`);
-    else if(ev.type==='escaped'||ev.type==='too_early') UI.toast('Cá đã thoát');
+    else if(ev.type==='caught') UI.toast(`Câu được ${ev.fish.name}`);   // chỉ báo tên cá (không kèm giá / độ hiếm)
+    else if(ev.type==='escaped'||ev.type==='too_early') UI.toast('Cá đã thoát.' + (outTxt ? ' ' + outTxt : ''));
+    else if(ev.type==='baitout') UI.toast(outTxt);
+    if(outBait && fishing) endFishPose();   // thu dây, về tư thế cầm cần
     UI.updateHUD(player);
     UI.refreshFishingPanel();
   }
@@ -442,12 +554,20 @@
     playerMesh.position.set(b.x, 0, b.z); ud.face = b.ry; ud.action = 'sit'; ud.actionT = 0; player.action = 'sit';
     player.x = b.x; player.y = b.z; Net.sendMyState({ x:b.x, y:b.z, action:'sit' });
   }
-  // ===== CHỐNG KẸT GHẾ =====
-  // Lỗi cũ: lúc ngồi, nhân vật nằm ngay TÂM hộp va chạm của ghế (|lx|<1.4, |lz|<0.74). Đứng dậy xong mỗi bước đi (~0.07 đơn vị/khung)
-  // đều vẫn nằm trong hộp đó → collides() trả true cả 2 trục → không nhúc nhích được nữa.
-  // Cách sửa 2 lớp: (1) đứng dậy thì bước ra phía trước ghế, chỗ trống gần nhất; (2) lưới an toàn: đang kẹt trong hộp ghế thì bỏ qua va chạm ghế để bước ra.
-  function inFurniture(x, z){   // đúng khi CHỈ riêng ghế đang chặn chỗ này (tường/cây/đài phun... vẫn tính bình thường)
-    return Scene3D.collides(currentZone, x, z) && !Scene3D.collides(currentZone, x, z, 0.8, true);
+  // Chỉ nới va chạm khi nhân vật thực sự đang lấn vào ghế và bước hiện tại đi ra ngoài.
+  // Trước đây dùng vùng tìm đường rộng (r=0.8), nên có thể tắt collider cả khi chỉ đứng gần ghế.
+  function benchClearance(b,x,z){
+    const ry=b.ry||0,c=Math.cos(ry),s=Math.sin(ry),dx=x-b.x,dz=z-b.z;
+    const lx=dx*c-dz*s,lz=dx*s+dz*c-0.05;
+    const qx=Math.abs(lx)-1.0,qz=Math.abs(lz)-0.275;
+    return Math.hypot(Math.max(qx,0),Math.max(qz,0))+Math.min(Math.max(qx,qz),0);
+  }
+  function inFurniture(x,z){
+    const hit=Scene3D.characterCollision(currentZone,x,verticalState.floor+verticalState.height,z,PLAYER_RADIUS,PLAYER_HEIGHT);
+    return hit&&hit.kind==='bench'?hit.object:null;
+  }
+  function escapingBench(b,x,z,dx,dz){
+    return b&&benchClearance(b,x+dx,z+dz)>benchClearance(b,x,z)+0.0001?b:null;
   }
   function leaveBenchSpot(){
     const p = playerMesh.position;
@@ -497,6 +617,7 @@
       playerMesh.userData.rideMode = null;
       playerMesh.userData.moving = false;
       playerMesh.position.set(sp.x, 0, sp.z);
+      resetVerticalState(currentZone,sp.x,sp.z);
       player.x = sp.x; player.y = sp.z;
       try{ Net.sendMyState({ x:sp.x, y:sp.z, action:null }); }catch(e){}
       return;
@@ -507,6 +628,7 @@
     const v = new THREE.Vector3();
     for(let i=0;i<n;i++){ const p = Scene3D.ferrisSeat(i, v); const d = p.distanceTo(playerMesh.position); if(d<bd){ bd=d; best=i; } }
     ferrisRide = best; ferrisArmed = false;
+    verticalState={ floor:0,height:0,velocity:0,grounded:true };
     walkTo = null;
     playerMesh.userData.action = 'ride'; playerMesh.userData.actionT = 0;
     playerMesh.userData.rideMode = 'ferris';
@@ -537,7 +659,7 @@
     Scene3D.setLotBadgeVisible(false);
     if(slot.kind==='plane') v.rotation.order='YXZ';
     riding = { type:slot.kind, slot:slot.i, v, prop:ud.prop||null, wheels:ud.wheels||[], steering:ud.steering||null,
-               frontWheels:ud.frontWheels||[], seat:ud.seat, flightBoxes:ud.flightBoxes||null,
+               frontWheels:ud.frontWheels||[], seat:ud.seat, flightBoxes:ud.flightBoxes||null, collisionBoxes:ud.collisionBoxes||null,
                yaw:slot.yaw, pitch:0, bank:0, alt:slot.kind==='plane'?0.03:0, targetAlt:slot.kind==='plane'?0.03:0,
                remain:Vehicles.RENT_SEC, maxSpeed:ud.maxSpeed, autoDescend:false, engine:0, speed:0, netT:0, stuckT:0, hintT:0 };
     const um = playerMesh.userData;
@@ -549,17 +671,28 @@
     document.querySelectorAll('.panel').forEach(p=>p.classList.add('hidden'));
     const hud = $('vehicleHud'); hud.classList.remove('hidden');
     hud.classList.toggle('car-mode', slot.kind!=='plane');
-    $('rentTimer').textContent = 'Xuống xe · 5:00';
+    riding.home = { x:slot.x, z:slot.z, yaw:slot.yaw };   // chỗ đỗ gốc: máy bay trả về đây
+    $('rentTimer').textContent = rentLabel(riding) + ' · 5:00';
+    $('rentTimer').title = rentLabel(riding);
     UI.toast(slot.kind==='plane' ? 'Giữ "Bay lên" (hoặc Space) để cất cánh; thả Tiến để lơ lửng' : 'Dùng joystick hoặc nút Tiến/Lùi để lái');
   }
+  const rentLabel = r => r.type==='plane' ? 'Trả máy bay' : 'Xuống xe';
   function dismountVehicle(){
     if(!riding) return;
-    const v = riding.v, yaw = riding.yaw, slot = riding.slot;
-    Scene3D.scene.remove(v);
-    Scene3D.setLotTaken(slot, false);                   // xe tự về bãi
+    const r = riding, v = r.v, yaw = r.yaw, slot = r.slot, isPlane = r.type==='plane';
     Scene3D.setLotBadgeVisible(true);
-    const spot = freeSpotNear(v.position.x, v.position.z);   // không bao giờ đặt nhân vật vào trong nhà / ngoài bản đồ
+    if(isPlane){
+      // Máy bay: KHÔNG biến mất ngay. Thả nhân vật xuống đất bên cạnh cánh, rồi máy bay tự lái về đúng ô đỗ cũ (xem updateReturning)
+      startPlaneReturn(r);
+    } else {
+      Scene3D.scene.remove(v);
+      Scene3D.setLotTaken(slot, false);                 // xe tự về bãi
+    }
+    // máy bay: đặt người ở bên hông thân (ngoài đầu cánh) để không bị đặt chồng vào model máy bay
+    const c0 = Math.cos(yaw), s0 = Math.sin(yaw), side = isPlane ? 3.4 : 0;
+    const spot = freeSpotNear(v.position.x + side*c0, v.position.z - side*s0);   // không bao giờ đặt nhân vật vào trong nhà / ngoài bản đồ
     playerMesh.position.set(spot.x, 0, spot.z);
+    resetVerticalState(currentZone,spot.x,spot.z);
     playerMesh.userData.face = yaw; playerMesh.userData.moving = false;
     playerMesh.rotation.set(0,yaw,0);
     playerMesh.userData.action = null; player.action = null;
@@ -571,21 +704,73 @@
     $('vehicleHud').classList.add('hidden');
     Object.keys(vInput).forEach(k=>vInput[k]=false);
     document.querySelectorAll('.vbtn').forEach(b=>b.classList.remove('hold'));
-    UI.toast('Đã trả phương tiện');
+    UI.toast(isPlane ? 'Đã trả máy bay · máy bay đang tự bay về bãi' : 'Đã trả phương tiện');
+  }
+  // ===== Máy bay đã trả: tự lái về chỗ đỗ cũ (cất cánh lên độ cao an toàn → bay thẳng tới bãi → hạ xuống đúng ô → hiện lại trong bãi) =====
+  // Ô đỗ vẫn "đang thuê" (không ai thuê được) cho tới khi máy bay về tới nơi. Máy bay tự lái không va chạm: bay trên độ cao CRUISE cao hơn mọi công trình (vòng quay ~18, màn hình ~13.5).
+  const returning = [];
+  const RET = { CRUISE:20, VS:9, SPEED:13, TURN:3.2 };
+  function startPlaneReturn(r){
+    r.v.rotation.order = 'YXZ';
+    returning.push({ slot:r.slot, v:r.v, prop:r.prop, home:r.home, x:r.v.position.x, z:r.v.position.z, alt:r.alt,
+                     yaw:r.yaw, pitch:r.pitch||0, bank:r.bank||0, engine:Math.max(0.45, r.engine||0), phase:'climb', speed:0 });
+  }
+  function updateReturning(dt){
+    for(let i=returning.length-1; i>=0; i--){
+      const a = returning[i], h = a.home;
+      const dx = h.x - a.x, dz = h.z - a.z, dist = Math.hypot(dx, dz);
+      let altGoal = RET.CRUISE, yawGoal = a.yaw, speedGoal = 0;
+      if(a.phase==='climb'){
+        if(dist > 0.5) yawGoal = Math.atan2(dx, dz);
+        if(a.alt >= RET.CRUISE - 0.5) a.phase = 'cruise';
+      } else if(a.phase==='cruise'){
+        yawGoal = dist > 0.5 ? Math.atan2(dx, dz) : a.yaw;
+        speedGoal = Math.min(RET.SPEED, 1.5 + dist*1.1);        // chậm dần khi tới gần bãi
+        if(dist < 0.4) a.phase = 'land';
+      } else {   // land: xoay đúng hướng ô đỗ rồi hạ xuống
+        altGoal = PLANE.GROUND; yawGoal = h.yaw;
+      }
+      // quay mũi (nhanh nhất theo đường ngắn), chỉ lao tới khi mũi đã gần hướng bay
+      const err = Math.atan2(Math.sin(yawGoal - a.yaw), Math.cos(yawGoal - a.yaw));
+      const turn = Math.max(-RET.TURN*dt, Math.min(RET.TURN*dt, err));
+      a.yaw += turn;
+      const align = Math.max(0, Math.cos(err));
+      a.speed += (speedGoal*align - a.speed) * Math.min(1, dt*2.5);
+      if(a.phase==='land'){ a.x += dx*Math.min(1, dt*3); a.z += dz*Math.min(1, dt*3); }
+      else if(dist > 0.001 && a.speed > 0.01){
+        const st = Math.min(dist, a.speed*dt);
+        a.x += dx/dist*st; a.z += dz/dist*st;
+      }
+      const climb = Math.max(-RET.VS, Math.min(RET.VS, (altGoal - a.alt)*3));
+      a.alt += climb*dt;
+      a.pitch += (Math.max(-PLANE.PITCH, Math.min(PLANE.PITCH, climb/RET.VS*PLANE.PITCH)) - a.pitch) * Math.min(1, dt*4);
+      a.bank += (Math.max(-PLANE.BANK, Math.min(PLANE.BANK, -turn/Math.max(dt,1e-3)*0.12)) - a.bank) * Math.min(1, dt*3.5);
+      a.engine += (1 - a.engine) * Math.min(1, dt*1.8);
+      if(a.prop) a.prop.rotation.z += a.engine*60*dt;
+      a.v.position.set(a.x, a.alt, a.z);
+      a.v.rotation.set(-a.pitch, a.yaw, a.bank, 'YXZ');
+      a.v.visible = (currentZone==='plaza');                    // người chơi sang đảo câu cá thì máy bay vẫn tự về nhưng không hiện ở cảnh đảo
+      if(a.phase==='land' && a.alt <= PLANE.GROUND + 0.04){
+        Scene3D.scene.remove(a.v);
+        Scene3D.setLotTaken(a.slot, false);                     // về tới ô đỗ: hiện lại máy bay trong bãi, có thể thuê tiếp
+        returning.splice(i, 1);
+      }
+    }
   }
   // chỗ trống gần nhất (quét xoắn ốc). Dùng khi xuống xe để nhân vật không rơi vào trong toà nhà / ra ngoài bản đồ rồi kẹt vĩnh viễn
   function freeSpotNear(x, z, rad = 0.8){
-    if(!Scene3D.collides(currentZone, x, z, rad)) return { x, z };
+    const free=(px,pz)=>!Scene3D.characterCollision(currentZone,px,Scene3D.groundY(currentZone,px,pz),pz,rad,PLAYER_HEIGHT);
+    if(free(x,z)) return { x, z };
     for(let d = 0.6; d <= 30; d += 0.6){
       for(let k = 0; k < 16; k++){
         const a = k*Math.PI/8, nx = x + Math.sin(a)*d, nz = z + Math.cos(a)*d;
-        if(!Scene3D.collides(currentZone, nx, nz, rad)) return { x:nx, z:nz };
+        if(free(nx,nz)) return { x:nx, z:nz };
       }
     }
     const sp = Scene3D.getZone(currentZone).spawn || { x:0, z:0 };
     return { x:sp.x, z:sp.z };
   }
-  const PLANE = { GROUND:0.03, MAX_ALT:22, VS:9, REV:0.45, LIMIT:52, BANK:0.52, PITCH:0.28 };
+  const PLANE = { GROUND:0.03, MAX_ALT:50, VS:12, REV:0.45, LIMIT:52, BANK:0.52, PITCH:0.28 };
   function updateRiding(dt){
     const r = riding; if(!r) return;
     let thr = -input.joy.y;
@@ -618,11 +803,9 @@
       if(r.alt < PLANE.GROUND+0.02 && r.targetAlt <= PLANE.GROUND+0.01) r.alt = PLANE.GROUND;
     }
     const airborne = isPlane && r.alt > 0.5;    // đã rời đất (vẫn có thể đâm vào công trình nếu bay thấp)
-    if(isPlane){ const bb = $('vBack'), lb = airborne ? 'Giảm ga' : 'Lùi'; if(bb && bb.textContent !== lb) bb.textContent = lb; }   // máy bay không bay lùi được: trên không nút này là giảm ga
-    // Air throttle runs down to exactly zero. Releasing "Tiến" while aloft
-    // settles into a stationary hover; "Lùi" reduces speed/brakes to hover.
-    const tgt = airborne ? (thr > 0 ? thr*r.maxSpeed : 0)
-                         : (thr >= 0 ? thr*r.maxSpeed : thr*r.maxSpeed*(isPlane ? PLANE.REV : 1));
+    // Nút luôn là "Lùi" (cả trên đất lẫn trên không): đẩy ngược lại chiều "Tiến" — bay lùi với tốc độ bằng PLANE.REV × tốc độ tối đa.
+    // Thả cả Tiến lẫn Lùi khi đang bay thì máy bay đứng yên lơ lửng (tgt = 0).
+    const tgt = thr >= 0 ? thr*r.maxSpeed : thr*r.maxSpeed*(isPlane ? PLANE.REV : 1);
     r.speed += (tgt - r.speed) * (isPlane
       ? Math.min(1, dt*(Math.abs(tgt) > Math.abs(r.speed) ? 2.2 : 3.5))
       : Math.min(1, dt*(Math.abs(tgt) > Math.abs(r.speed) ? 3.4 : 5.2)));
@@ -644,9 +827,8 @@
     const nz = r.v.position.z + Math.cos(r.yaw)*speed*dt;
     let x = r.v.position.x, z = r.v.position.z;
     const planeBlocked = (px,pz)=>isPlane
-      ? (!!Scene3D.aircraftCollision(currentZone,px,r.alt,pz,r.yaw,-r.pitch,r.bank,r.flightBoxes) ||
-         (r.alt<0.35 && Scene3D.collides(currentZone,px,pz,1.2)))
-      : Scene3D.collides(currentZone,px,pz);
+      ? !!Scene3D.aircraftCollision(currentZone,px,r.alt,pz,r.yaw,-r.pitch,r.bank,r.flightBoxes)
+      : !!Scene3D.aircraftCollision(currentZone,px,0,pz,r.yaw,0,0,r.collisionBoxes);
     if(!planeBlocked(nx,r.v.position.z)) x = nx;
     if(!planeBlocked(x,nz)) z = nz;
     if(isPlane){
@@ -692,7 +874,7 @@
     r.netT -= dt; if(r.netT <= 0){ r.netT = 0.15; try{ Net.sendMyState({x:x, y:z, action:'sit'}); }catch(e){} }
     r.remain -= dt;
     const mm = Math.max(0, Math.floor(r.remain/60)), ss = Math.max(0, Math.floor(r.remain%60));
-    const rt = $('rentTimer'); if(rt) rt.textContent = `Xuống xe · ${mm}:${String(ss).padStart(2,'0')}`;
+    const rt = $('rentTimer'); if(rt) rt.textContent = `${rentLabel(r)} · ${mm}:${String(ss).padStart(2,'0')}`;
     if(r.remain <= 0 && !r.autoDescend){
       r.autoDescend = true;
       if(!isPlane || r.alt < 0.6){ dismountVehicle(); return; }
@@ -718,7 +900,11 @@
     const rt = document.getElementById('rentTimer');
     if(rt) rt.addEventListener('click', ()=>{
       if(!riding) return;
-      if(riding.type==='plane' && riding.alt > 0.8 && !riding.autoDescend){ riding.autoDescend = true; UI.toast('Đang hạ cánh…'); }
+      if(riding.type==='plane' && riding.alt > 0.8){
+        // Trả máy bay khi đang bay: tự hạ cánh như cũ → đáp xuống thì thả nhân vật xuống đất, máy bay tự bay về bãi, kết thúc lượt thuê
+        if(!riding.autoDescend){ riding.autoDescend = true; UI.toast('Đang hạ cánh để trả máy bay…'); }
+        else UI.toast('Máy bay đang hạ cánh…');
+      }
       else dismountVehicle();
     });
   })();
@@ -730,6 +916,8 @@
     const time = now/1000;
     fpsN++; if(now-fpsT>500){ if(SHOW_FPS){ const f=$('fps'); if(f) f.textContent = Math.round(fpsN*1000/(now-fpsT)) + ' FPS'; } fpsN=0; fpsT=now; }
 
+    const jumpBtn=$('btnJump');
+    if(jumpBtn) jumpBtn.classList.toggle('hidden',!playerMesh||!!riding||ferrisRide>=0||Player.isSeated(playerMesh.userData.action));
     if(playerMesh){
       let moving = false;
       if(riding){ updateRiding(dt); }
@@ -752,7 +940,10 @@
 
       moving = (mx!==0 || mz!==0);
       playerMesh.userData.moving = moving;
-      if(moving && Player.isSeated(playerMesh.userData.action)){ playerMesh.userData.action = null; player.action = null; } // đi là tự đứng dậy
+      if(moving && Player.isSeated(playerMesh.userData.action)){
+        playerMesh.userData.action = null; player.action = null;
+        leaveBenchSpot(); // rời khỏi ghế trước khi áp collider đi bộ, tránh bắt đầu bên trong ghế
+      }
       if(moving && fishing) cancelFishing();   // đi là thôi câu (mồi đã quăng coi như mất)
 
       if(moving && !Player.isSeated(playerMesh.userData.action)){
@@ -762,9 +953,10 @@
         const dx = (dir.fx*mx + dir.rx*mz) * sp;
         const dz = (dir.fz*mx + dir.rz*mz) * sp;
         const px = playerMesh.position.x, pz = playerMesh.position.z;
-        const esc = inFurniture(px, pz);   // đang kẹt trong hộp ghế (vừa đứng dậy) → tạm bỏ qua va chạm ghế để bước ra
-        if(!Scene3D.collides(currentZone, px+dx, pz, 0.8, esc)) playerMesh.position.x += dx;
-        if(!Scene3D.collides(currentZone, px, pz+dz, 0.8, esc)) playerMesh.position.z += dz;
+        const bench = inFurniture(px,pz);
+        tryMoveCharacter(dx,0,escapingBench(bench,px,pz,dx,0));
+        const px2=playerMesh.position.x,pz2=playerMesh.position.z,bench2=inFurniture(px2,pz2);
+        tryMoveCharacter(0,dz,escapingBench(bench2,px2,pz2,0,dz));
         // face direction
         const ang = Math.atan2(dx, dz);
         playerMesh.userData.face = ang;
@@ -784,8 +976,8 @@
         else {
           const sp = Math.min(dist, (input.run||speedBoost>0 ? 7 : 4) * dt), sx = ddx/dist*sp, sz = ddz/dist*sp;
           let mv = false;
-          if(!Scene3D.collides(currentZone, px+sx, pz, 0.8, true)){ playerMesh.position.x += sx; mv = true; }   // bỏ qua va chạm ghế: đang đi tới chỗ ngồi
-          if(!Scene3D.collides(currentZone, px, pz+sz, 0.8, true)){ playerMesh.position.z += sz; mv = true; }
+          if(tryMoveCharacter(sx,0,b)) mv = true;   // chỉ bỏ qua collider ghế đích khi đi tới để ngồi
+          if(tryMoveCharacter(0,sz,b)) mv = true;
           ud.moving = mv; ud.face = Math.atan2(sx, sz);
           player.x = playerMesh.position.x; player.y = playerMesh.position.z;
           Net.sendMyState({ x:player.x, y:player.y, action:player.action });
@@ -796,10 +988,11 @@
       } // end else (!riding)
 
       if(speedBoost>0) speedBoost-=dt;
+      updateVerticalPhysics(dt);
 
       // action timer (auto-clear non-sit)
       if(playerMesh.userData.action && !Player.isSeated(playerMesh.userData.action) && FISH_ACTS.indexOf(playerMesh.userData.action)<0){
-        const dur = playerMesh.userData.action==='jump'?0.8 : (playerMesh.userData.action==='wave'?2.5 : (playerMesh.userData.action==='cry'?3 : (playerMesh.userData.action==='holla'?2 : 4)));
+        const dur = playerMesh.userData.action==='jump'?(verticalState.grounded?0.8:999) : (playerMesh.userData.action==='wave'?2.5 : (playerMesh.userData.action==='cry'?3 : (playerMesh.userData.action==='holla'?2 : 4)));
         if(playerMesh.userData.actionT > dur){ playerMesh.userData.action=null; player.action=null; }
       }
 
@@ -821,6 +1014,9 @@
       // update animations
       playerMesh.userData.running = !!input.run && !!playerMesh.userData.moving && !riding && ferrisRide < 0;
       Scene3D.updateCharacter(playerMesh, dt, time);
+      if(!riding&&ferrisRide<0&&!Player.isSeated(playerMesh.userData.action)&&
+         (verticalState.height>0.001||!verticalState.grounded||Math.abs(verticalState.floor-Scene3D.groundY(currentZone,playerMesh.position.x,playerMesh.position.z))>0.01))
+        playerMesh.position.y=verticalState.floor+verticalState.height;
       if(ferrisRide >= 0){
         // đặt nhân vật vào cabin SAU khi update (vì GChar.update tự ghi position.y mỗi khung)
         Scene3D.ferrisSync(time);                       // đồng bộ góc quay vòng với đúng thời điểm khung hình này (cùng `time` với render) trước khi lấy vị trí ghế
@@ -880,7 +1076,7 @@
         Scene3D.scene.add(playerMesh);
         player.zone = currentZone;
         if(fromZone==='fishing'){
-          player.inventory.equippedRod = 0;   // rời đảo: cất cần; quay lại phải trang bị lại trong Balo
+          player.inventory.equippedRod = 0; player.inventory.equippedBait = null;   // rời đảo: cất cần + mồi; quay lại phải chọn lại trong Balo
           if(playerMesh.userData.action==='rod'){
             playerMesh.userData.action=null; player.action=null;
             try{ Net.sendMyState({ x:player.x, y:player.y, action:null }); }catch(e){}
@@ -889,6 +1085,7 @@
         Object.values(otherMeshes).forEach(m=>{ Scene3D.scene.add(m); m.visible = (currentZone==='plaza'); });
         const sp = (currentZone==='plaza' && fromZone==='fishing') ? { x:0, z:32 } : Scene3D.getZone(currentZone).spawn;   // về từ đảo: đứng trước cổng tàu (không phải giữa sân)
         playerMesh.position.set(sp.x, 0, sp.z);
+        resetVerticalState(currentZone,sp.x,sp.z);
         player.x = sp.x; player.y = sp.z;
         UI.toast(`Đến ${Scene3D.getZone(currentZone).name}`);
         UI.updateHUD(player);
@@ -916,13 +1113,16 @@
       });
       if(riding) { /* camera do updateRiding lo */ }
       else Scene3D.updateCamera(playerMesh.position.x, playerMesh.position.z,
-             ferrisRide >= 0 ? playerMesh.position.y - 0.6 : (playerMesh.userData.gy||0));   // lên cabin thì camera bám theo độ cao
+             ferrisRide >= 0 ? playerMesh.position.y - 0.6 :
+               (Math.abs(verticalState.floor-Scene3D.groundY(currentZone,playerMesh.position.x,playerMesh.position.z))>0.01
+                 ? verticalState.floor+verticalState.height : (playerMesh.userData.gy||0)+verticalState.height));   // camera bám theo bề mặt và độ cao khi nhảy
       Park.update(currentZone);
       Fishing.update(dt, player, onFishEvent, player.inventory.equippedRod || 1);
       refreshFishQuick();
       UI.updateHUD(player);
     }
 
+    if(returning.length) updateReturning(dt);
     Scene3D.render(time);
     requestAnimationFrame(loop);
   }

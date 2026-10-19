@@ -42,6 +42,7 @@
 
 <!-- ===== GAME SCREEN ===== -->
 <div id="gameScreen" class="game-screen hidden">
+  <div id="camInput"></div>
   <div id="threeContainer"></div>
   <iframe id="tvFrame" title="GCITY TV" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin"></iframe>
 
@@ -57,6 +58,7 @@
 
   <!-- Bottom action bar -->
   <div class="hud-bottom">
+    <button class="hud-toggle" id="btnHudToggle" type="button" title="Ẩn nút" aria-label="Ẩn/hiện nút" aria-expanded="true">›</button>
     <button class="action-btn" id="btnChar" title="Đổi nhân vật"><span class="ic">🧍</span><span class="lb">Đổi</span></button>
     <button class="action-btn" id="btnRun" title="Chạy"><span class="ic">🏃</span><span class="lb">Chạy</span></button>
     <button class="action-btn" id="btnEmote" title="Hành động"><span class="ic">🕺</span><span class="lb">Hành động</span></button>
@@ -73,6 +75,9 @@
   <div id="joystick" class="joystick">
     <div id="joystickKnob" class="joystick-knob"></div>
   </div>
+  <button id="btnJump" class="jump-btn" type="button" aria-label="Nhảy lên" title="Nhảy lên">
+    <span class="jump-icon">⬆</span><span class="jump-label">NHẢY</span>
+  </button>
 
   <!-- Chat panel -->
   <div id="chatPanel" class="panel chat-panel hidden">
@@ -184,6 +189,7 @@
 <script defer src="js/net.js"></script>
 <script defer src="js/player.js"></script>
 <script defer src="js/fishing.js"></script>
+<script defer src="js/fishart.js"></script>
 <script defer src="js/ui.js"></script>
 <script defer src="js/lotto.js"></script>
 <script defer src="js/character.js"></script>

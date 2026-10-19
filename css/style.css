@@ -22,20 +22,20 @@ input { font-family:inherit; outline:none; }
 
 /* ===== Character Select ===== */
 .char-select { position:fixed; inset:0; background:radial-gradient(ellipse at center,#1a1a2e 0%,#0a0a12 100%);
-  display:flex; align-items:center; justify-content:center; z-index:90; overflow-y:auto; padding:20px; }
-.char-panel { background:#141422; border:1px solid #2a2a44; border-radius:16px; padding:24px; width:100%; max-width:480px;
+  display:flex; z-index:90; overflow-y:auto; padding:20px; }
+.char-panel { position:relative; margin:auto; min-width:0; background:#141422; border:1px solid #2a2a44; border-radius:16px; padding:24px; width:100%; max-width:480px;
   box-shadow:0 20px 60px rgba(0,0,0,.5); }
 .char-title { text-align:center; font-size:22px; margin-bottom:16px; color:#ffd700; letter-spacing:2px; }
 .char-gender-tabs { display:flex; gap:8px; margin-bottom:16px; }
 .gender-tab { flex:1; padding:10px; background:#1e1e30; color:#8888aa; border-radius:8px; font-size:15px;
   transition:all .2s; }
 .gender-tab.active { background:linear-gradient(135deg,#6bc5ff,#4a9eff); color:#fff; }
-.char-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px; }
-.char-card { background:#1e1e30; border:2px solid transparent; border-radius:12px; padding:10px 6px;
+.char-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:16px; }
+.char-card { min-width:0; overflow:hidden; background:#1e1e30; border:2px solid transparent; border-radius:12px; padding:10px 4px;
   text-align:center; cursor:pointer; transition:all .2s; }
 .char-card:hover { transform:translateY(-2px); background:#262640; }
 .char-card.selected { border-color:#ffd700; background:#2a2a3e; box-shadow:0 0 16px rgba(255,215,0,.3); }
-.char-card canvas { width:88px; height:110px; }
+.char-card canvas { display:block; margin:0 auto; width:100%; max-width:110px; height:auto; aspect-ratio:4/5; }
 .char-card .char-label { font-size:12px; color:#aaaacc; margin-top:4px; }
 .char-name-row { margin-bottom:16px; }
 .char-name-row input { width:100%; padding:12px; background:#1e1e30; border:1px solid #2a2a44; border-radius:8px;
@@ -84,7 +84,16 @@ input { font-family:inherit; outline:none; }
 .joystick-knob { position:absolute; top:50%; left:50%; width:44px; height:44px; border-radius:50%;
   background:linear-gradient(135deg,#6bc5ff,#4a9eff); transform:translate(-50%,-50%);
   box-shadow:0 4px 12px rgba(74,158,255,.4); }
-@media (min-width:768px) { .joystick { display:none; } }
+.jump-btn { position:absolute; right:24px; bottom:102px; width:68px; height:68px; border-radius:50%;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
+  border:2px solid rgba(214,239,255,.82); color:#fff;
+  background:radial-gradient(circle at 35% 25%,#72c8f4,#27618e 74%);
+  box-shadow:0 4px 14px rgba(0,0,0,.34),inset 0 1px 3px rgba(255,255,255,.35);
+  z-index:11; touch-action:none; user-select:none; -webkit-user-select:none; }
+.jump-btn:active { transform:scale(.92); background:radial-gradient(circle at 35% 25%,#96dcff,#347bb1 74%); }
+.jump-icon { font:700 30px/1 sans-serif; }
+.jump-label { font:700 9px/1 sans-serif; letter-spacing:.6px; }
+@media (min-width:768px) and (hover:hover) and (pointer:fine) { .joystick,.jump-btn { display:none; } }
 
 /* Panels */
 .panel { position:absolute; background:#141422; border:1px solid #2a2a44; border-radius:14px;
@@ -159,6 +168,7 @@ input { font-family:inherit; outline:none; }
 /* Toast */
 .toast { position:absolute; top:70px; left:50%; transform:translateX(-50%); background:rgba(20,20,34,.95);
   border:1px solid #ffd700; color:#ffd700; padding:10px 20px; border-radius:20px; font-size:14px; z-index:50;
+  width:max-content; max-width:calc(100% - 24px); text-align:center; line-height:1.35;
   animation:toastIn .3s ease-out; }
 @keyframes toastIn { from{opacity:0; transform:translate(-50%,-10px);} to{opacity:1; transform:translate(-50%,0);} }
 
@@ -167,7 +177,7 @@ input { font-family:inherit; outline:none; }
   font-size:12px; max-width:160px; word-wrap:break-word; pointer-events:none; z-index:5; }
 
 /* 3D container */
-#threeContainer { position:absolute; inset:0; }
+#threeContainer { position:absolute; inset:0; pointer-events:none; }   /* canvas + container không nhận chạm: xuyên xuống iframe video / lớp #camInput */
 #threeContainer canvas { display:block; }
 
 /* Interact hint (E key) */
@@ -176,12 +186,13 @@ input { font-family:inherit; outline:none; }
   border-radius:20px; font-size:14px; z-index:15; pointer-events:none; }
 
 /* Character preview canvas in select */
-.char-card canvas { width:88px; height:110px; image-rendering:auto; }
+.char-card canvas { image-rendering:auto; }
 
 
 /* ===== Công viên: màn hình TV + mini game ===== */
 #tvFrame { position:absolute; left:0; top:0; width:960px; height:540px; border:0; background:#000;
-  transform-origin:0 0; visibility:hidden; z-index:1; }
+  transform-origin:0 0; visibility:hidden; z-index:-1; }   /* z -1: nằm DƯỚI canvas WebGL (canvas có lỗ trong suốt ở vị trí TV) */
+#camInput { position:absolute; inset:0; z-index:-2; touch-action:none; }   /* nhận kéo/xoay/zoom camera; nằm dưới iframe nên chạm vào video vẫn tới YouTube */
 .panel { z-index:20; }
 .hud-bottom, .joystick, .toast, .interact-hint { z-index:10; }
 .hud-bottom { flex-wrap:wrap; justify-content:center; max-width:96vw; }
@@ -219,6 +230,7 @@ body .action-btn .lb{display:none}
 body .action-btn .ic{font-size:22px;line-height:1}
 body .joystick{background:radial-gradient(circle at 50% 35%,#7d8a84,#34474d 72%);border:3px solid #55737c}
 body .joystick-knob{background:radial-gradient(circle at 35% 30%,#8fd0f5,#1f5f94 70%);border:3px solid #a8d8f0}
+body .jump-btn{background:radial-gradient(circle at 35% 25%,#8fd0f5,#1f5f94 72%);border:3px solid #a8d8f0;color:#fff}
 body .interact-hint{background:#fff;color:#2a2f36;border-radius:16px;box-shadow:0 2px 8px rgba(0,0,0,.25)}
 
 body .hud-bottom{top:104px;gap:8px}
@@ -439,7 +451,8 @@ body .action-btn.on{background:#3b6fa0}
 .fish-stat-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin:10px 0}
 .fish-stat{display:flex; flex-direction:column; gap:3px; min-width:0; padding:10px 9px;
   border:1px solid #294450; border-radius:12px; background:#182a34}
-.fish-stat>span{font-size:17px}.fish-stat small{font-size:10px; color:#91afb6}
+.fish-stat>span{font-size:17px; line-height:0; height:22px; display:flex; align-items:center}
+.fish-stat .stat-bait{width:22px; height:22px}.fish-stat .stat-bait.dim{opacity:.4; filter:grayscale(.6)}.fish-stat small{font-size:10px; color:#91afb6}
 .fish-stat b{overflow:hidden; color:#effafa; font-size:12px; text-overflow:ellipsis; white-space:nowrap}
 .fish-main-actions{display:grid; grid-template-columns:1.2fr 1fr; gap:8px}
 .fish-cast-action,.fish-sell-action{min-height:46px; padding:10px; border-radius:12px; font-size:13px; font-weight:800}
@@ -458,7 +471,8 @@ body .action-btn.on{background:#3b6fa0}
 .bait-card{display:grid; grid-template-columns:38px minmax(0,1fr); gap:7px; align-items:center;
   padding:10px; border:1px solid #2b424d; border-radius:13px; background:#182932}
 .bait-icon{display:grid; place-items:center; width:36px; height:36px; border-radius:11px;
-  background:#264653; font-size:21px}
+  background:#264653; overflow:hidden}
+.bait-icon .bait-art{display:block; width:32px; height:32px}
 .bait-details{min-width:0}
 .bait-title{display:flex; justify-content:space-between; gap:6px; align-items:baseline}
 .bait-title b{color:#f1f8f5; font-size:12px}.bait-title span{color:#a1bdc0; font-size:10px; white-space:nowrap}
@@ -476,10 +490,16 @@ body .action-btn.on{background:#3b6fa0}
 .premium-rod-copy small{color:#e5c56c; font-size:10px}
 .rod-buy{flex:none; padding:8px 10px; border-radius:9px; background:#927533; color:#fff5cc; font-size:10px; font-weight:800}
 .rod-buy:disabled{background:#4b4939; color:#c3bd9d; opacity:.85}
-.codex-card{display:grid; grid-template-columns:38px minmax(0,1fr) 34px; gap:8px; align-items:center;
+.codex-card{display:grid; grid-template-columns:78px minmax(0,1fr) 34px; gap:9px; align-items:center;
   padding:9px; border:1px solid #2a424e; border-radius:12px; background:#182932}
-.codex-icon{display:grid; place-items:center; width:36px; height:36px; border-radius:11px;
-  background:linear-gradient(145deg,#2f6974,#283855); font-size:20px}
+.codex-icon{display:grid; place-items:center; width:78px; height:48px; border-radius:11px; overflow:hidden;
+  background:linear-gradient(145deg,#2f6974,#283855)}
+.codex-art{display:block; width:100%; height:100%}
+.codex-card.tier-uncommon{border-color:#35675a}.codex-card.tier-uncommon .codex-title span{background:#24493f; color:#9ee8c4}
+.codex-card.tier-rare{border-color:#355f8a}.codex-card.tier-rare .codex-title span{background:#233f61; color:#9cc8ff}
+.codex-card.tier-epic{border-color:#6a4a8c}.codex-card.tier-epic .codex-title span{background:#41294f; color:#d9b3ff}
+.codex-card.tier-legend{border-color:#9a7a2c; background:linear-gradient(120deg,#33301f,#182932 70%)}
+.codex-card.tier-legend .codex-title span{background:#5c4a17; color:#ffe08a}
 .codex-copy{min-width:0}.codex-title{display:flex; align-items:center; justify-content:space-between; gap:6px}
 .codex-title b{color:#f1f8f5; font-size:11px}.codex-title span{padding:2px 6px; border-radius:99px;
   background:#284854; color:#9edbd2; font-size:9px; white-space:nowrap}
@@ -496,6 +516,9 @@ body .action-btn.on{background:#3b6fa0}
 .inv-rod-slot.equipped{border:1px solid #54c4b3; background:linear-gradient(145deg,#254c4e,#1d3440); box-shadow:0 0 0 1px #54c4b344}
 .inv-rod-slot.equipped .inv-count{color:#7ee7cf; font-weight:700}
 .inv-rod-slot.locked{opacity:.55}
+.inv-bait-slot{position:relative}
+.inv-bait-slot .bait-ic{width:32px; height:32px; display:block}
+.inv-bait-slot .inv-qty{position:absolute; top:3px; right:5px; color:#ffd700; font-size:11px; font-weight:700}
 .inventory-note{grid-column:1/-1; margin:1px 0 0; color:#8fa9af; font-size:11px; text-align:center}
 @keyframes fishBite{to{filter:brightness(1.2); transform:scale(1.015)}}
 @media (max-width:520px){
@@ -599,3 +622,10 @@ body .action-btn.on{background:#3b6fa0}
 @media (prefers-reduced-motion:reduce){
   .lt *, .lt *::before, .lt *::after{ animation:none !important; transition:none !important; }
 }
+
+
+/* ===== Nút ẩn/hiện cột nút bên phải ===== */
+body .hud-toggle{width:34px;height:34px;align-self:flex-end;border-radius:50%;background:rgba(31,53,80,.85);border:1px solid #6b8aa6;
+  color:#fff;font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer}
+body .hud-bottom.collapsed > :not(.hud-toggle){display:none}
+body .hud-bottom.collapsed .hud-toggle{opacity:.6}

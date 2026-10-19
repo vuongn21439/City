@@ -65,7 +65,18 @@ const Vehicles = (() => {
       const w = new THREE.Mesh(wg, wm); w.castShadow = true; pivot.add(w); g.add(pivot); wheels.push(w);
       if(z > 0) frontWheels.push(pivot);
     });
-    g.userData = { seat:{ x:-0.42, y:0.9, z:0.25 }, wheels, frontWheels, steering, prop:null, maxSpeed:11 };
+    // Compound collision boxes follow the open-car silhouette; unlike a large
+    // circle they leave the cabin open and let the hood/trunk act as low steps.
+    const collisionBoxes = [
+      { x:0, y:0.62, z:1.2,   w:2.05, h:0.5, d:1.05 }, // hood
+      { x:0, y:0.62, z:-1.35, w:2.05, h:0.5, d:0.85 }, // trunk
+      { x:0, y:0.50, z:-0.15, w:1.72, h:0.28,d:1.7 },  // floor
+      { x:0.88,y:0.84,z:-0.15, w:0.14,h:0.4, d:1.7 },  // side rail
+      { x:-0.88,y:0.84,z:-0.15,w:0.14,h:0.4, d:1.7 },  // side rail
+      ...[[-0.98,1.15],[0.98,1.15],[-0.98,-1.2],[0.98,-1.2]].map(([x,z]) =>
+        ({ x, y:0.38, z, w:0.42, h:0.72, d:0.42 }))
+    ];
+    g.userData = { seat:{ x:-0.42, y:0.9, z:0.25 }, wheels, frontWheels, steering, prop:null, maxSpeed:11, collisionBoxes };
     return g;
   }
 
@@ -117,7 +128,7 @@ const Vehicles = (() => {
       { x:0, y:0.24, z:0.3,  w:1.25,h:0.44,d:0.44 },  // main landing gear
       { x:0, y:0.24, z:1.35, w:0.3, h:0.44,d:0.3 }    // tail wheel
     ];
-    g.userData = { seat:{ x:0, y:1.18, z:0.4 }, wheels:[], prop, maxSpeed:13, flightBoxes };
+    g.userData = { seat:{ x:0, y:1.18, z:0.4 }, wheels:[], prop, maxSpeed:13, flightBoxes, collisionBoxes:flightBoxes };
     return g;
   }
 
