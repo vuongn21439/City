@@ -33,7 +33,7 @@ const UI = (() => {
   const previewImgs = {};
   function drawPreview3D(ctx, gender, i){
     if(typeof GChar === 'undefined') return false;
-    const key = gender + i; let im = previewImgs[key];
+    const key = gender + i + (GChar.hasGLB && GChar.hasGLB(gender, i) ? 'g' : 'b'); let im = previewImgs[key];
     if(!im){ const url = GChar.preview(gender, i, 132, 165); if(!url) return false; im = new Image(); im.src = url; previewImgs[key] = im; }
     if(im.complete) ctx.drawImage(im, 0, 0); else im.onload = ()=> ctx.drawImage(im, 0, 0);
     return true;
@@ -112,7 +112,7 @@ const UI = (() => {
     document.querySelectorAll('.gender-tab').forEach(t=>{ t.style.display = ''; });
     return true;
   }
-  function showCharSelect(){ $('charSelect').classList.remove('hidden'); }
+  function showCharSelect(){ renderCharGrid(); $('charSelect').classList.remove('hidden'); }   // vẽ lại: lúc khởi động model GLB có thể chưa tải xong
   function hideCharSelect(){ $('charSelect').classList.add('hidden'); $('gameScreen').classList.remove('hidden'); }
 
   // ---- Hộp xác nhận (vd: thoát game) ----
@@ -503,7 +503,7 @@ const UI = (() => {
     window.addEventListener('pointercancel',end);
   }
 
-  return { setLoading, hideLoading, initCharSelect, openCharSwitch, closeCharSwitch, showCharSelect, hideCharSelect,
+  return { setLoading, hideLoading, refreshCharGrid: renderCharGrid, initCharSelect, openCharSwitch, closeCharSwitch, showCharSelect, hideCharSelect,
     askConfirm, closeConfirm, fmt, NO_COIN,
     togglePanel, closePanel, openPanel, openShop, openFishingPanel, refreshFishingPanel, initPanels, addChat, updateHUD, toast, initJoystick,
     renderFishingPanel, renderInventory, renderPlayers, renderShop, renderVehicleShop, guardTap, holdCoin, releaseCoin };

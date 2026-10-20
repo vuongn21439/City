@@ -757,8 +757,9 @@ const GChar = (() => {
         group.position.y = 0.06 + br;
         p.legL.rotation.set(-1.44, 0, 0.10); p.legR.rotation.set(-1.44, 0, -0.10);
         p.shinL.rotation.set(1.34, 0, 0);      p.shinR.rotation.set(1.34, 0, 0);
-        p.armL.rotation.set(-0.66, 0, 0.17);   p.armR.rotation.set(-0.66, 0, -0.17);
-        p.foreL.rotation.set(-0.98, 0, 0);     p.foreR.rotation.set(-0.98, 0, 0);
+        // tay: cánh tay trên rủ xuống + khép vào trong, cẳng tay gập ~57° → bàn tay đặt trên đùi (trước đây tay giơ ngang ngực)
+        p.armL.rotation.set(0.02, 0, 0.45);    p.armR.rotation.set(0.02, 0, -0.45);
+        p.foreL.rotation.set(-1.0, 0, 0);      p.foreR.rotation.set(-1.0, 0, 0);
         p.body.rotation.set(0.10 + br, 0, 0);
         p.head.rotation.set(-0.05, Math.sin(tt*0.7)*0.07, 0);
         if(p.tail) p.tail.rotation.set(0.35, 0, Math.sin(tt*1.2)*0.05);
@@ -867,7 +868,8 @@ const GChar = (() => {
   const pCache = {};
   function preview(gender, idx, w, h){
     w = w || 128; h = h || 160;
-    const key = gender + idx + ':' + w + 'x' + h;
+    const isGLB = (typeof GLBChar !== 'undefined') && GLBChar.ready(gender + ':' + (idx % DEFS[gender].length));
+    const key = gender + idx + (isGLB ? 'g' : 'b') + ':' + w + 'x' + h;   // GLB tải xong sau lần vẽ đầu → phải vẽ lại, không dùng ảnh cũ
     if(pCache[key]) return pCache[key];
     try{
       if(!pR){
@@ -882,6 +884,8 @@ const GChar = (() => {
       pR.setSize(w, h); pCam.aspect = w/h; pCam.updateProjectionMatrix();
       pCam.position.set(0, 2.0, 9.0); pCam.lookAt(0, 1.85, 0);
       const b = build(gender, idx); b.group.rotation.y = -0.38;
+      // model GLB thấp hơn nhân vật dựng khối (cfg.height ≈ 3.1 so với ≈ 3.45) → phóng lên cho thẻ chọn nhân vật đồng đều
+      if(b.parts.glb){ const gm = GLBChar.models[b.parts.glb.model]; const hh = gm && gm.cfg && gm.cfg.height; if(hh) b.group.scale.setScalar(3.45 / hh); }
       b.group.userData.parts = b.parts; b.group.userData.walkT = 0;
       update(b.group, 0.016, 0.0); b.group.rotation.y = -0.38;
       pScene.add(b.group); pR.render(pScene, pCam);
@@ -891,5 +895,6 @@ const GChar = (() => {
     }catch(e){ console.warn('GChar.preview lỗi:', e); return null; }
   }
 
-  return { DEFS, build, update, preview };
+  const hasGLB = (gender, idx) => (typeof GLBChar !== 'undefined') && GLBChar.ready(gender + ':' + (idx % DEFS[gender].length));
+  return { DEFS, build, update, preview, hasGLB };
 })();

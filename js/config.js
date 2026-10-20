@@ -25,7 +25,8 @@ const GCITY_CONFIG = {
   // Không có file hoặc lỗi tải → tự dùng nhân vật dựng sẵn, game không bị treo. Thêm nhân vật khác = thêm 1 dòng.
   // Tuỳ chọn mỗi model: height, headScale, legScale, outline, lift, gripAhead, yaw, bones (xem đầu file js/glbchar.js)
   MODELS: {
-    'male:0': { url:'assets/models/male0.glb' }
+    'male:0':   { url:'assets/models/male0.glb' },
+    'female:0': { url:'assets/models/female0.glb' }
   },
 
   GAME: {

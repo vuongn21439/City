@@ -25,9 +25,9 @@ Mở `index.html` hoặc `npx serve .`
 - NPC đứng ở các điểm chơi; offline không có bot (đổi `botCount` trong js/config.js nếu muốn)
 
 ## Asset
-Phần lớn asset tự vẽ bằng Three.js geometry. Riêng nhân vật nam #1 dùng model GLB (xem mục *Nhân vật 3D từ file GLB* bên dưới).
+Phần lớn asset tự vẽ bằng Three.js geometry. Riêng nhân vật nam #1 và nữ #1 dùng model GLB (xem mục *Nhân vật 3D từ file GLB* bên dưới).
 ## Nhân vật 3D từ file GLB (thay nhân vật dựng khối)
-Nhân vật nam #1 (`male:0`) giờ dùng model GLB có xương; 11 nhân vật còn lại vẫn là bản dựng khối cũ. Làm từng nhân vật một: thêm 1 dòng vào `MODELS` trong `js/config.js`.
+Nhân vật nam #1 (`male:0`) và nữ #1 (`female:0`) giờ dùng model GLB có xương; 10 nhân vật còn lại vẫn là bản dựng khối cũ. Làm từng nhân vật một: thêm 1 dòng vào `MODELS` trong `js/config.js`.
 
 **Cách hoạt động** (`js/glbchar.js`): `character.js` vẫn dựng bộ pivot vô hình và vẫn chạy toàn bộ animation cũ (đi, chạy, nhảy, ngồi ghế, xếp bằng, vẫy, buồn, nhảy múa, ăn mừng, lái xe, câu cá). Mỗi khung, `GLBChar.sync()` đổi góc quay các pivot đó sang xương của model (retarget theo hệ toạ độ thế giới, nên không phụ thuộc T-pose/A-pose hay trục xương của từng loại rig). Tự nhận xương Mixamo, Quaternius, KayKit, Unreal, Rigify, Bip01. Cần câu bám đúng bàn tay model.
 
@@ -46,7 +46,7 @@ Nhân vật nam #1 (`male:0`) giờ dùng model GLB có xương; 11 nhân vật 
 
 **Lưu ý**
 - Phải chạy qua http (`npx serve .` hoặc GitHub Pages). Mở thẳng `index.html` kiểu `file://` thì trình duyệt chặn tải GLB và game dùng nhân vật cũ.
-- `assets/models/male0.glb` hiện là **model thử** (Soldier trong ví dụ của three.js, nguồn Mixamo). Chỉ để kiểm tra; trước khi đăng Google Play/Facebook hãy thay bằng model có giấy phép rõ (ưu tiên CC0: Quaternius, Kenney) hoặc kiểm tra điều khoản Mixamo.
+- `assets/models/male0.glb` (Soldier) và `female0.glb` (Michelle) hiện là **model thử** lấy từ ví dụ của three.js, nguồn Mixamo. Chỉ để kiểm tra; trước khi đăng Google Play/Facebook hãy thay bằng model có giấy phép rõ (ưu tiên CC0: Quaternius, Kenney) hoặc kiểm tra điều khoản Mixamo.
 - Nén GLB cho nhẹ (2.1MB → ~0.55MB): `npx @gltf-transform/cli optimize in.glb out.glb --compress meshopt --texture-compress webp`. Bản r186 giải nén meshopt sẵn. Bản r128 (three.min.js) chỉ nạp được GLB không nén.
 - Mỗi model GLB thêm 1 lớp viền nên số draw call gấp đôi số mesh của model: chọn model ít mesh (gộp vật liệu) cho điện thoại yếu.
 
@@ -123,3 +123,10 @@ Chạm NPC 🍀 **Số May Mắn** (hoặc toà nhà Số may mắn, bấm E) �
 - **Hết mồi**: dùng nốt mồi đang chọn thì lượt câu đó vẫn chạy tiếp; xong lượt là dừng câu và báo "Đã hết …". Người chơi tự mở Balo chọn loại khác, hoặc mua thêm rồi chọn lại. Nút 🎣 nổi hiện "Chọn mồi" khi đang cầm cần mà chưa chọn mồi. Cất cần / rời đảo / vào lại game thì bỏ chọn mồi.
 - **Thông báo câu được cá**: chỉ báo tên cá (VD "Câu được Cá trích"), không kèm giá / độ hiếm. Thông báo dài (VD báo hết mồi) tự xuống dòng, không bị bóp hẹp.
 - Màn hình chỉ hiện thông tin cần cho người chơi (mồi đang dùng, số lượng, loại cá mỗi mồi thu hút); đã bỏ các dòng giải thích kỹ thuật.
+
+
+## Cập nhật: nhân vật nữ #1 (GLB) · ảnh chọn nhân vật · tư thế ngồi
+- **Nữ #1** (`female:0`) dùng `assets/models/female0.glb` (Michelle, rig Mixamo). Thêm 1 dòng trong `MODELS` ở `js/config.js`.
+- **Ảnh màn chọn nhân vật**: trước đây thẻ được vẽ lúc khởi động, trước khi GLB tải xong, nên luôn là ảnh nhân vật dựng khối. Giờ ảnh được cache theo "GLB đã sẵn sàng hay chưa" và vẽ lại khi tải xong; model GLB được phóng lên cho cao bằng các thẻ còn lại.
+- **Tư thế ngồi ghế** (`character.js`, nhánh `sit`): tay trên `(0.02, 0, ±0.45)`, cẳng tay `-1.0` → bàn tay đặt trên đùi thay vì giơ ngang ngực (đã kiểm tra với nhân vật dựng khối và cả 2 model GLB).
+- **Sửa lỗi bản r128 (`three.min.js`)**: r128 chưa tự bật skinning cho vật liệu nên model GLB đứng chữ T và shader viền báo lỗi `objectNormal`. `glbchar.js` giờ bật `skinning` cho r128 và tự tính normal cho viền.

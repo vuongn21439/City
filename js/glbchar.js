@@ -71,6 +71,7 @@ const GLBChar = (() => {
       if(lift > 0){                                                                                          // nâng sáng đều, khỏi bị tối mặt khuất (giữ đúng sắc màu vật liệu)
         if(n.map){ n.emissive.setRGB(lift, lift, lift); n.emissiveMap = n.map; } else n.emissive.copy(n.color).multiplyScalar(lift);
       }
+      if(parseInt(THREE.REVISION, 10) < 129) n.skinning = true;                                              // r128 chưa tự bật skinning cho SkinnedMesh (r129+ tự bật) → không bật thì model đứng yên ở T-pose
       n.name = src.name; map.set(src, n); return n;
     };
     scene.traverse(o => { if(o.isMesh){ o.material = Array.isArray(o.material) ? o.material.map(conv) : conv(o.material); o.castShadow = true; o.receiveShadow = false; o.frustumCulled = false; } });
@@ -80,9 +81,13 @@ const GLBChar = (() => {
     const mt = new THREE.MeshBasicMaterial({ color:0x2b2236, side:THREE.BackSide });
     mt.onBeforeCompile = sh => {
       sh.uniforms.uThick = { value:thick };
+      // r128: MeshBasicMaterial chỉ khai báo objectNormal khi có envmap → shader lỗi "objectNormal undeclared". Bản cũ tự tính normal đã qua skinning.
+      const nrm = parseInt(THREE.REVISION, 10) >= 150 ? 'normalize(objectNormal)'
+        : 'normalize((bindMatrixInverse * (skinWeight.x * boneMatX + skinWeight.y * boneMatY + skinWeight.z * boneMatZ + skinWeight.w * boneMatW) * bindMatrix * vec4(normal, 0.0)).xyz)';
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uThick;')
-        .replace('#include <skinning_vertex>', '#include <skinning_vertex>\n  transformed += normalize(objectNormal) * uThick;');
+        .replace('#include <skinning_vertex>', '#include <skinning_vertex>\n  transformed += ' + nrm + ' * uThick;');
     };
+    if(parseInt(THREE.REVISION, 10) < 129) mt.skinning = true;
     mt.customProgramCacheKey = () => 'gcity-glb-outline';
     return mt;
   }

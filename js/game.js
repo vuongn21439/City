@@ -165,7 +165,7 @@
   const glbReady = (typeof GLBChar !== 'undefined') ? GLBChar.preload().catch(()=>{}) : Promise.resolve();
   const loadTimer = setInterval(()=>{
     if(step<loadSteps.length){ UI.setLoading(loadSteps[step][0], loadSteps[step][1]); step++; }
-    else { clearInterval(loadTimer); glbReady.then(()=>{ UI.hideLoading(); const sv=Save.load(); if(sv){ const n=Scene3D.CHAR_DEFS[sv.gender].length; enterGame({name:sv.name, gender:sv.gender, charIndex:Math.min(Math.max(0,sv.charIndex|0),n-1), _save:sv}); } else UI.showCharSelect(); }); }
+    else { clearInterval(loadTimer); glbReady.then(()=>{ UI.hideLoading(); UI.refreshCharGrid(); const sv=Save.load(); if(sv){ const n=Scene3D.CHAR_DEFS[sv.gender].length; enterGame({name:sv.name, gender:sv.gender, charIndex:Math.min(Math.max(0,sv.charIndex|0),n-1), _save:sv}); } else UI.showCharSelect(); }); }
   }, 400);
 
   async function enterGame(charData){
