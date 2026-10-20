@@ -16,7 +16,7 @@ Mở `index.html` hoặc `npx serve .`
 
 ## Tính năng
 - Quảng trường 3D thật: tòa nhà, cây, đài phun nước Hoàng Gia 3 tầng có tia nước hạt, đèn đường, ghế đá
-- Nhân vật 3D dựng từ khối nguyên thủy (6 nam + 6 nữ), animation đi/nhảy/ngồi/vẫy/7 điệu nhảy
+- Nhân vật 3D dựng từ khối nguyên thủy (6 nam + 6 nữ), animation đi/nhảy lên/ngồi/vẫy/1 điệu nhảy (icon nam/nữ riêng)
 - Camera third-person, kéo chuột xoay, lăn chuột zoom
 - WASD di chuyển tương đối camera, E tương tác tòa nhà
 - 2 zone: Quảng trường ↔ Đảo câu cá (cổng tàu)
@@ -25,7 +25,31 @@ Mở `index.html` hoặc `npx serve .`
 - NPC đứng ở các điểm chơi; offline không có bot (đổi `botCount` trong js/config.js nếu muốn)
 
 ## Asset
-Toàn bộ asset tự vẽ bằng Three.js geometry (không file ngoài). Thay bằng model GLTF/ảnh của bạn trong `js/three-scene.js`.
+Phần lớn asset tự vẽ bằng Three.js geometry. Riêng nhân vật nam #1 dùng model GLB (xem mục *Nhân vật 3D từ file GLB* bên dưới).
+## Nhân vật 3D từ file GLB (thay nhân vật dựng khối)
+Nhân vật nam #1 (`male:0`) giờ dùng model GLB có xương; 11 nhân vật còn lại vẫn là bản dựng khối cũ. Làm từng nhân vật một: thêm 1 dòng vào `MODELS` trong `js/config.js`.
+
+**Cách hoạt động** (`js/glbchar.js`): `character.js` vẫn dựng bộ pivot vô hình và vẫn chạy toàn bộ animation cũ (đi, chạy, nhảy, ngồi ghế, xếp bằng, vẫy, buồn, nhảy múa, ăn mừng, lái xe, câu cá). Mỗi khung, `GLBChar.sync()` đổi góc quay các pivot đó sang xương của model (retarget theo hệ toạ độ thế giới, nên không phụ thuộc T-pose/A-pose hay trục xương của từng loại rig). Tự nhận xương Mixamo, Quaternius, KayKit, Unreal, Rigify, Bip01. Cần câu bám đúng bàn tay model.
+
+**Đổi model:** đặt file `.glb` vào `assets/models/`, sửa `url` trong `js/config.js`. Mở console (F12), thấy dòng `[GLBChar] male:0 → k=… legScale=…` là nhận xương OK. Không nhận được xương / không tải được file / quá 12 giây → game **tự dùng lại nhân vật cũ** và in lý do ra console, không bao giờ treo.
+
+| Tuỳ chọn (mỗi model) | Ý nghĩa |
+|---|---|
+| `height` (3.1) | chiều cao mong muốn theo đơn vị rig (nhân vật cũ ≈ 3.45) |
+| `headScale` (1.25) | phóng đầu cho hợp phong cách chibi; `1` = giữ nguyên |
+| `legScale` (tự tính) | co chân để hông đúng độ cao 1.2 mà ghế/xếp bằng/xe đã chỉnh sẵn. Đặt `1` = chân thật, ngồi ghế sẽ lệch |
+| `outline` (true) | viền toon giống nhân vật cũ |
+| `lift` (0.22) | nâng sáng nền, model tối thì tăng |
+| `gripAhead` (0.14) | chỉnh chỗ cầm cần câu so với cổ tay |
+| `yaw` (tự dò) | xoay thêm nếu model quay mặt sai hướng |
+| `bones` | ép tên xương khi tự nhận sai, vd `{ handL:'Palm2.L' }` |
+
+**Lưu ý**
+- Phải chạy qua http (`npx serve .` hoặc GitHub Pages). Mở thẳng `index.html` kiểu `file://` thì trình duyệt chặn tải GLB và game dùng nhân vật cũ.
+- `assets/models/male0.glb` hiện là **model thử** (Soldier trong ví dụ của three.js, nguồn Mixamo). Chỉ để kiểm tra; trước khi đăng Google Play/Facebook hãy thay bằng model có giấy phép rõ (ưu tiên CC0: Quaternius, Kenney) hoặc kiểm tra điều khoản Mixamo.
+- Nén GLB cho nhẹ (2.1MB → ~0.55MB): `npx @gltf-transform/cli optimize in.glb out.glb --compress meshopt --texture-compress webp`. Bản r186 giải nén meshopt sẵn. Bản r128 (three.min.js) chỉ nạp được GLB không nén.
+- Mỗi model GLB thêm 1 lớp viền nên số draw call gấp đôi số mesh của model: chọn model ít mesh (gộp vật liệu) cho điện thoại yếu.
+
 
 ## Bản Công viên (cập nhật)
 - Zone chính là **Công viên GCITY**: đài phun nước ở giữa, 8 ghế quanh đài + 3 ghế hướng về màn hình (**chạm vào ghế để ngồi** — xa thì nhân vật tự đi tới; chạm ra chỗ khác hoặc di chuyển joystick/WASD để đứng dậy)
@@ -54,7 +78,9 @@ Toàn bộ asset tự vẽ bằng Three.js geometry (không file ngoài). Thay b
 ## Chuyển từ v20 sang City-main — Đảo câu cá mới · nút 🎣 nổi · ban đêm
 Giữ nguyên logic City-main (đường vòng vuông + vạch sang đường, vòng đu quay, đổi giờ theo đồng hồ máy, lưu key YouTube qua `js/keys.js`, nút thoát, v.v.). Chỉ lấy các điểm sau từ v20:
 - **Đảo câu cá (`js/island.js` thay hoàn toàn)**: đảo bầu dục giữa biển có bãi cát, cỏ, đường đất chữ S, ~22 cây dừa, đá ven biển và 7 đảo con ngoài xa; chòi lợp lá (phao cứu sinh, quầy xanh ngọc, cá gỗ trên mái), dù đỏ-trắng / xanh-trắng kèm ghế nằm, 3 đèn lồng; bến gỗ chữ T có thuyền chèo, cổng tàu về Quảng trường nằm ở mép đầu bến. Đã xóa hồ nước và bến cũ của đảo.
-- **Câu cá**: câu được khi đứng trên bến hoặc sát mép nước (`Island.atDock`); nhân vật tự quay mặt ra phía nước (`Island.fishDir`). Nút **🎣 nổi bên trái** (chỉ hiện ở đảo): bấm để quăng, khi cá cắn nút đỏ nhấp nháy "KÉO!". Kéo cần khi phao còn đang chờ bị chặn bằng thông báo (chỉ nút nổi; bảng ở NPC vẫn giữ logic cũ). Đi chuyển hoặc bấm emote thì thôi câu, mồi đã quăng coi như mất. Animation câu cá vẫn là của City-main (`js/character.js`).
+- **Câu cá**: câu được khi đứng trên bến hoặc sát mép nước (`Island.atDock`); nhân vật tự quay mặt ra phía nước (`Island.fishDir`). Nút **🎣 nổi bên trái** (chỉ hiện ở đảo): bấm để quăng, khi cá cắn nút đỏ nhấp nháy "KÉO!". Kéo cần khi phao còn đang chờ bị chặn bằng thông báo (chỉ nút nổi; bảng ở NPC vẫn giữ logic cũ). Đi chuyển hoặc bấm emote thì thôi câu, mồi đã quăng coi như mất. Animation câu cá: xem mục ngay bên dưới (`js/character.js`).
+- **Animation câu cá (chuẩn hoá)**: lượt quăng chỉ được tính khi **phao chạm mặt nước**. Nhân vật giương cần → vung → buông dây (0,52s); phao bay theo đường vòng cung tới điểm rơi trên mặt nước (`Island.castTarget` tự né đất / ván bến / thuyền), bắn gợn nước; `ud.castLanded` bật lên thì `game.js` mới gọi `Fishing.landed()` → lúc đó mới **trừ mồi** và bắt đầu chờ cá (đi mất giữa lúc đang quăng thì không mất mồi). Phao luôn nằm đúng mặt nước (trước đây lơ lửng trên không). Cá đớp: phao nhúng + gợn nhanh; kéo cá: phao + cá (màu theo loại) kéo từ nước lên đầu cần; chưa quăng / cá thoát: dây thu về, phao treo dưới đầu cần.
+- **Cần câu thường / cao cấp (`ud.rodTier` 1 | 2, theo `inventory.rod`)**: cơ bản = cần tre-gỗ ngắn, cuộn nhựa xám nhỏ, 2 khoen sắt, phao đỏ-trắng, quăng 5,2 đơn vị; cao cấp = thân carbon đen dài, tay cầm bần, cuộn bạc lớn + quay vàng, 5 khoen vàng, dải quấn đỏ, phao vàng-đỏ có đèn xanh, quăng xa 6,6 đơn vị. Chủ chòi (NPC) cầm cần cao cấp.
 - **Về Quảng trường từ đảo** thì đứng trước cổng tàu (0, 32) thay vì giữa sân.
 - **Ban đêm (Quảng trường + đảo)**: trời/sương mù xanh đen và ánh sáng đêm theo v20; đài phun nước phát sáng xanh ngọc; thêm 12 đèn đường quanh sân khấu, vỉa hè, sân cổng tàu, vòng quay và hai bên trường đua; đèn sân khấu; trên đảo có đèn chòi, 3 đèn lồng, đèn đầu bến, biển tối đi. Ánh sáng chỉ là sprite/đĩa cộng sáng (không dùng đèn thật) nên nhẹ cho điện thoại. Trời vẫn chuyển ngày/đêm mượt theo giờ máy như City-main.
 
@@ -69,3 +95,31 @@ Dựng trên bản A (hitbox 3D theo hình máy bay) + sửa thêm:
 - **Camera đuổi sau lưng máy bay**: kéo chuột/ngón tay để liếc quanh, thả tay ~1.4s thì camera êm ái quay về sau lưng (hằng số `CAM_RECENTER_DELAY`, `CAM_RECENTER_RATE` trong `js/three-scene.js`).
 - **Va chạm 3D thêm**: vòng quay (cao tới h+R), trường đua (lan can ~1.2) + cổng đích (~4.7), sân khấu + 2 loa. Tòa nhà / cây / đèn / đài phun / ghế / màn hình giữ nguyên từ bản A.
 - Hạ cánh được lên nóc nhà (đúng mặt nóc), lơ lửng khi thả ga, nghiêng cánh khi rẽ, ngóc đầu khi lên/xuống.
+
+## Fix va chạm đèn đường / bồn hoa · vẽ lại bồn hoa (cập nhật)
+- **Va chạm**: nhân vật không còn đi xuyên **đèn đường** và **bồn hoa**. Đèn = vòng tròn quanh cột (`0.3 + r·0.55`), bồn hoa = hình chữ nhật đúng cỡ viền đá (hằng số `BED` trong `js/three-scene.js`, dùng chung cho cả vẽ lẫn va chạm). Cả hai luôn là vật cản, kể cả lúc đang tự đi tới ghế. Xe thuê cũng không còn lướt qua đèn / bồn hoa; máy bay thấp hơn ~4.5 (đèn) / ~1.25 (bồn hoa) thì đâm vào, bay cao hơn thì lướt qua (`aircraftCollision`).
+- **Bồn hoa vẽ lại** (`makeFlowerBed`): viền đá kem có đế + gờ mũ, đất nâu, bụi lá xanh low-poly và **hoa thật** — cúc (8 cánh quanh nhuỵ vàng), tulip (5 cánh chụm thành đài, 2 lá dài), oải hương (chùm nụ dọc thân), mỗi bông có thân + lá. Màu/loại/chiều cao cố định theo toạ độ bồn nên lần nào dựng lại cũng giống nhau. Mỗi bồn gộp thành 1 mesh (`Batch`) nên chỉ 1 draw call.
+- 2 bồn ở sân cổng tàu nhích nhẹ (`±7.4,35` → `±7.2,34.7`) để không chạm chân đèn `(±8,36)` khi bồn mới sâu hơn.
+
+## Cập nhật: tab "Số may mắn" (chọn 3 chữ số) làm lại
+Chạm NPC 🍀 **Số May Mắn** (hoặc toà nhà Số may mắn, bấm E) → mở tab riêng, code ở `js/lotto.js` (module `Lotto`).
+- **Cách chơi ngay trên tab**: 3 bước (Chọn 3 số → Bấm Quay → Khớp từ số cuối) + **bảng thưởng** có ký hiệu chấm (chấm đầy = chữ số phải khớp). Luật giữ nguyên như cũ: phí **10 xu**; khớp cả 3 số **1.000 xu** · khớp 2 số cuối **100 xu** · khớp số cuối **20 xu**; mỗi lượt chỉ nhận giải cao nhất.
+- **Chọn số**: ▲/▼ từng chữ số, 🎲 chọn ngẫu nhiên (3 chữ số nhảy rồi dừng lần lượt). Desktop: bấm vào chữ số rồi gõ 0–9, phím ↑/↓/←/→, Enter để quay.
+- **Hiệu ứng quay**: 3 cuộn số quay cùng lúc rồi dừng **từ phải sang trái** (khớp liên tiếp thì chờ lâu hơn cho hồi hộp). Chữ số khớp: viền xanh + nảy + pháo xu; trúng thì dòng thưởng bật sáng, hàng giải tương ứng trong bảng thưởng nổi lên, số dư chạy lên; độc đắc có thêm loé sáng + pháo lớn. Tự tắt hiệu ứng khi hệ thống bật "giảm chuyển động".
+- **An toàn dữ liệu**: kết quả được tính, trả thưởng và lưu ngay lúc bấm Quay; phần hiệu ứng chỉ là "lộ" kết quả. HUD giữ số xu cũ tới khi cuộn cuối dừng (`UI.holdCoin` / `UI.releaseCoin`) nên không lộ kết quả sớm. Đóng panel / tắt tab giữa chừng vẫn nhận đúng thưởng; mở lại panel khi đang quay thì tiếp tục đúng trạng thái.
+- Đổi phí / giải thưởng: hằng số `FEE` và `TIERS` đầu `js/lotto.js` (bảng thưởng tự cập nhật theo).
+
+## Cập nhật: 16 loài cá · mỗi loài một tranh · cá câu lên đúng như trong Sổ cá · cân lại giá
+- **16 loài, 5 độ hiếm** (`js/fishing.js`): Phổ biến (cá trích 4 · cá bống 5 · cá chép 6 · cá rô phi 8) · Ít gặp (cá trê 14 · cá thu 18 · cá nóc 24) · Hiếm (cá quả 40 · cá hồi 50 · cá hề 58 · cá đuối 72) · Sử thi (cá kiếm 130 · cá koi 160 · cá lồng đèn 200) · Huyền thoại (cá vàng 400 · cá rồng 650). Đơn vị: xu. Id cũ (`carp`, `tilapia`, `bass`, `golden`) giữ nguyên nên Sổ cá đã lưu không mất.
+- **Mỗi loài một tranh riêng** (`js/fishart.js`, module `FishArt`): vẽ bằng SVG, không dùng ảnh/font ngoài. `FishArt.svg(id)` cho Sổ cá; `FishArt.texture(id)` vẽ cùng bức đó lên canvas làm texture.
+- **Cá kéo lên giống ảnh trong Sổ cá**: cá treo ở đầu dây là một `Sprite` dùng đúng texture của loài vừa câu (`character.js`, `updateGear`), to nhỏ theo loài (`LEN` trong `fishart.js`), đầu hướng lên và quẫy nhẹ. Thêm loài mới = thêm 1 mục vào `FISH_TYPES` + 1 hàm vẽ cùng id trong `ART`.
+- **Cân lại giá và tỉ lệ**: mỗi cột `weight` cộng đúng 100 nên chính là % gặp với cần cơ bản. Tỉ lệ theo nhóm (giun / tép / mồi giả): Phổ biến 90 / 80 / 62 · Ít gặp 8 / 14,5 / 24 · Hiếm 1,8 / 4,5 / 10 · Sử thi 0,18 / 0,85 / 3 · Huyền thoại 0,02 / 0,15 / 1. Kỳ vọng mỗi lần quăng (cần cơ bản): giun ≈ 8 xu (vốn 1) · tép ≈ 12 xu (vốn 3) · mồi giả ≈ 23 xu (vốn 8). Cần cao cấp (`rarityMultiplier` 1,65) tăng cơ hội theo nhóm: Ít gặp ×1,23 · Hiếm ×1,65 · Sử thi ×1,81 · Huyền thoại ×1,98 (`TIER_BOOST`). Giá mồi và giá cần giữ nguyên.
+- **Sổ cá**: thẻ có ảnh to, nhãn độ hiếm có màu, hiện "Đã câu X/16 loài". "Mồi hợp" lấy theo mồi cho tỉ lệ gặp cao nhất.
+
+
+## Câu cá: mồi thật · chọn mồi trong Balo · thông báo cá
+- **Mồi**: Giun · Tép · Cá con (bỏ "Mồi giả"). Mỗi mồi có hình riêng (`BaitArt` trong `js/fishart.js`) dùng ở Balo, quầy mua mồi và bảng câu cá. Save cũ còn `lure` được tự đổi thành `minnow` (Cá con) khi vào game.
+- **Dùng mồi**: cầm cần câu bất kỳ rồi mở Balo chọn loại mồi (`inventory.equippedBait`). Chưa cầm cần thì chưa chọn được mồi; không có chuyện tự đổi sang mồi khác.
+- **Hết mồi**: dùng nốt mồi đang chọn thì lượt câu đó vẫn chạy tiếp; xong lượt là dừng câu và báo "Đã hết …". Người chơi tự mở Balo chọn loại khác, hoặc mua thêm rồi chọn lại. Nút 🎣 nổi hiện "Chọn mồi" khi đang cầm cần mà chưa chọn mồi. Cất cần / rời đảo / vào lại game thì bỏ chọn mồi.
+- **Thông báo câu được cá**: chỉ báo tên cá (VD "Câu được Cá trích"), không kèm giá / độ hiếm. Thông báo dài (VD báo hết mồi) tự xuống dòng, không bị bóp hẹp.
+- Màn hình chỉ hiện thông tin cần cho người chơi (mồi đang dùng, số lượng, loại cá mỗi mồi thu hút); đã bỏ các dòng giải thích kỹ thuật.
