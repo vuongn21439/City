@@ -17,6 +17,17 @@ class CanvasTexture extends NS.CanvasTexture {
 
 window.THREE = Object.assign({}, NS, { CanvasTexture });
 
+// Bộ nạp model GLB + nhân bản skeleton cho js/glbchar.js. Nạp bất đồng bộ (không chặn game); lỗi mạng chỉ khiến game dùng nhân vật dựng sẵn.
+window.GLBLibs = (async () => {
+  const [{ GLTFLoader }, SkeletonUtils] = await Promise.all([
+    import('three/addons/loaders/GLTFLoader.js'),
+    import('three/addons/utils/SkeletonUtils.js')
+  ]);
+  window.THREE.GLTFLoader = GLTFLoader;
+  window.THREE.SkeletonUtils = SkeletonUtils;
+  try { window.THREE.MeshoptDecoder = (await import('three/addons/libs/meshopt_decoder.module.js')).MeshoptDecoder; } catch (e) { /* GLB không nén thì không cần */ }
+})().catch(e => console.warn('[GLBChar] không nạp được GLTFLoader:', e));
+
 window.GFX = {
   modern: MODERN,
   LI: Math.PI,   // r155+ bỏ "legacy lights": nhân π để độ sáng đèn Ambient/Hemisphere/Directional giữ như r128

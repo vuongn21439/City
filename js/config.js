@@ -21,6 +21,13 @@ const GCITY_CONFIG = {
     appId: "1:000:web:abcdef"
   },
 
+  // Nhân vật 3D từ file GLB (js/glbchar.js). Key = 'giớitính:thứ-tự-trong-bảng-chọn', vd 'male:0' = nhân vật nam đầu tiên.
+  // Không có file hoặc lỗi tải → tự dùng nhân vật dựng sẵn, game không bị treo. Thêm nhân vật khác = thêm 1 dòng.
+  // Tuỳ chọn mỗi model: height, headScale, legScale, outline, lift, gripAhead, yaw, bones (xem đầu file js/glbchar.js)
+  MODELS: {
+    'male:0': { url:'assets/models/male0.glb' }
+  },
+
   GAME: {
     startCoins: 100,
     moveSpeed: 160,          // px/sec

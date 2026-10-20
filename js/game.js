@@ -161,9 +161,11 @@
   // ---- Boot ----
   const loadSteps = [[10,'Đang tải trò chơi…'],[30,'Đang chuẩn bị nhân vật…'],[55,'Đang tải thành phố…'],[75,'Sắp hoàn tất…'],[95,'Đang kết nối…'],[100,'Sẵn sàng']];
   let step=0;
+  // nhân vật GLB (js/glbchar.js): tải song song với màn loading; lỗi/quá 12s → dùng nhân vật dựng sẵn, không bao giờ chặn game
+  const glbReady = (typeof GLBChar !== 'undefined') ? GLBChar.preload().catch(()=>{}) : Promise.resolve();
   const loadTimer = setInterval(()=>{
     if(step<loadSteps.length){ UI.setLoading(loadSteps[step][0], loadSteps[step][1]); step++; }
-    else { clearInterval(loadTimer); UI.hideLoading(); const sv=Save.load(); if(sv){ const n=Scene3D.CHAR_DEFS[sv.gender].length; enterGame({name:sv.name, gender:sv.gender, charIndex:Math.min(Math.max(0,sv.charIndex|0),n-1), _save:sv}); } else UI.showCharSelect(); }
+    else { clearInterval(loadTimer); glbReady.then(()=>{ UI.hideLoading(); const sv=Save.load(); if(sv){ const n=Scene3D.CHAR_DEFS[sv.gender].length; enterGame({name:sv.name, gender:sv.gender, charIndex:Math.min(Math.max(0,sv.charIndex|0),n-1), _save:sv}); } else UI.showCharSelect(); }); }
   }, 400);
 
   async function enterGame(charData){

@@ -453,8 +453,20 @@ const GChar = (() => {
     const m = bakeMesh(buildEye(def, female, side), false); m.castShadow = false; const g = new THREE.Group(); g.add(m); return g;
   }
 
+  // Nhân vật dùng model GLB (js/glbchar.js): cùng bộ pivot vô hình như bản dựng sẵn → GChar.update chạy y nguyên,
+  // rồi GLBChar.sync() chuyển góc quay các pivot sang xương của model.
+  function buildGLB(key, gender, idx){
+    const g = new THREE.Group(), parts = GLBChar.makeDriver(g);
+    parts.glb = GLBChar.attach(key, g, parts);
+    attachGear(g, parts);
+    return { group:g, parts, def:DEFS[gender][idx % DEFS[gender].length] };
+  }
   function build(gender, idx){
     const key = gender + ':' + (idx % DEFS[gender].length);
+    if(typeof GLBChar !== 'undefined' && GLBChar.ready(key)){
+      try{ return buildGLB(key, gender, idx); }
+      catch(e){ console.warn('[GLBChar] ' + key + ' lỗi → dùng nhân vật dựng sẵn:', e.message || e); GLBChar.fail(key); }
+    }
     if(!protoCache[key]) protoCache[key] = makeProto(gender, idx);
     const g = protoCache[key].clone(true);
     const parts = {};
@@ -541,7 +553,7 @@ const GChar = (() => {
     if(!p.foreR) return;
     p.rods = {}; p.floats = {};
     [1, 2].forEach(tier => {
-      p.rods[tier] = buildRod(tier); p.foreR.add(p.rods[tier]);
+      p.rods[tier] = buildRod(tier); (p.glb && p.glb.rodAnchor || p.foreR).add(p.rods[tier]);
       p.floats[tier] = buildFloat(tier); g.add(p.floats[tier]);
     });
     const lineMat = new THREE.MeshBasicMaterial({ color:0xf2efe2, transparent:true, opacity:0.85 });
@@ -678,6 +690,7 @@ const GChar = (() => {
   const restCache = new Map();
   const _inv = new THREE.Matrix4(), _m = new THREE.Matrix4(), _v = new THREE.Vector3();
   function lowestLocalY(group, p){
+    if(p.glb) return GLBChar.lowestY(group, p);
     group.updateMatrixWorld(true);
     _inv.copy(group.matrixWorld).invert();
     let low = Infinity;
@@ -761,7 +774,7 @@ const GChar = (() => {
         p.head.rotation.set(-0.03, Math.sin(tt*0.7)*0.06, 0);
         if(p.tail) p.tail.rotation.set(0.35, 0, Math.sin(tt*1.2)*0.05);
         // đặt điểm thấp nhất của chân/váy chạm đúng mặt đất (sau khi đã set pose)
-        const key = ud.def || p.body;
+        const key = p.glb ? p.glb.model : (ud.def || p.body);
         let low = restCache.get(key);
         if(low === undefined){ low = lowestLocalY(group, p); restCache.set(key, low); }
         group.position.y = -low * group.scale.y + br;
@@ -843,6 +856,8 @@ const GChar = (() => {
         p.head.rotation.y = 0.12;
       }
     }
+    // model GLB: đưa pose của các pivot sang xương thật (trước updateGear để cần câu bám đúng bàn tay)
+    if(p.glb) GLBChar.sync(group, p);
     // dây câu + phao + cá + gợn nước (vẽ sau khi pose để đầu cần đúng chỗ)
     updateGear(group, p, ud, dt, time);
   }
